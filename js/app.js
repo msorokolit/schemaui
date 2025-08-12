@@ -22,6 +22,21 @@
     return;
   }
 
+  // Example: global custom renderer (uncomment to try)
+  // SchemaFormLib.registerRenderer({
+  //   name: 'ColorSwatch',
+  //   tester: ({ controlSchema }) => controlSchema && controlSchema.format === 'color' ? 10 : 0,
+  //   render: ({ path, label, required, setValue, getValue }) => {
+  //     const wrap = document.createElement('div');
+  //     wrap.className = 'mb-3';
+  //     const lab = document.createElement('label'); lab.className = 'form-label'; lab.textContent = label + (required ? ' *' : '');
+  //     const input = document.createElement('input'); input.type = 'color'; input.className = 'form-control form-control-color'; input.name = path; input.value = getValue() || '#000000';
+  //     input.addEventListener('input', () => setValue(input.value));
+  //     wrap.appendChild(lab); wrap.appendChild(input);
+  //     return wrap;
+  //   }
+  // });
+
   let form = SchemaFormLib.create(formContainer, { liveValidate: false, locale: 'en' });
 
   function parseJsonOrAlert(text, label) {
@@ -76,11 +91,9 @@
   liveValidateToggle.addEventListener('change', () => { form.setLiveValidate(liveValidateToggle.checked); });
   localeSelect.addEventListener('change', () => { form.setLocale(localeSelect.value); });
 
-  // Demo: events
-  form.on('form:change', ({ detail: { data } }) => { /* could sync elsewhere */ });
-  form.on('form:validate', ({ detail }) => { /* use detail.valid, detail.errors */ });
+  form.on('form:change', ({ detail: { data } }) => {});
+  form.on('form:validate', ({ detail }) => {});
 
-  // Autoload example on start
   (async function init() {
     try {
       const res = await fetch('schemas/example.json');

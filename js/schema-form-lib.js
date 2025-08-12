@@ -6,6 +6,11 @@
 (function (global) {
   'use strict';
 
+  // Global custom renderer registry
+  // Each renderer: { name?: string, tester?: (ctx) => number, render: (ctx) => HTMLElement }
+  // ctx: { element, uiSchema, controlSchema, rootSchema, path, label, required, instance, utils:{ createDefault }, emit, setValue, getValue, validate }
+  const globalRenderers = [];
+
   class SchemaForm {
     constructor(rootEl, options = {}) {
       if (!rootEl) throw new Error('SchemaForm requires a root element');
@@ -24,6 +29,9 @@
 
       // Event bus per instance
       this._bus = new Map();
+
+      // Per-instance renderer registry (copy from global + any provided in options)
+      this._renderers = Array.isArray(options.renderers) ? [...globalRenderers, ...options.renderers] : [...globalRenderers];
 
       // Pre-bind
       this._onInputValidate = this._onInputValidate.bind(this);
@@ -47,7 +55,6 @@
 
     setLiveValidate(enabled) {
       this.liveValidate = Boolean(enabled);
-      // trigger fresh validation state
       this.validate();
     }
 
@@ -65,6 +72,12 @@
       const set = this._bus.get(event);
       if (set) set.delete(handler);
     }
+
+    // Renderer registry (instance)
+    registerRenderer(def) {
+      if (def && typeof def.render === 'function') this._renderers.push(def);
+    }
+    clearRenderers() { this._renderers = [...globalRenderers]; }
 
     getData() {
       return this._collectDataFromForm(this.schema) || {};
@@ -647,6 +660,25 @@
       return false;
     }
 
+    _pickCustomRenderer(element, controlSchema, path, name, required) {
+      // Name-based
+      const rName = typeof element.renderer === 'string' ? element.renderer : null;
+      if (rName && rName !== 'Table' && rName !== 'ListWithDetail') {
+        const foundByName = this._renderers.find((r) => r.name === rName);
+        if (foundByName) return foundByName;
+      }
+      // Tester-based: choose highest rank > 0
+      let best = null; let bestRank = 0;
+      const ctx = { element, uiSchema: this.uiSchema, controlSchema, rootSchema: this.schema, path, label: name, required, instance: this };
+      this._renderers.forEach((r) => {
+        if (typeof r.tester === 'function') {
+          const rank = Number(r.tester(ctx)) || 0;
+          if (rank > bestRank) { bestRank = rank; best = r; }
+        }
+      });
+      return bestRank > 0 ? best : null;
+    }
+
     _renderCategorization(element, schema) {
       const tabsId = 'tabs_' + Math.random().toString(36).slice(2);
       const nav = document.createElement('ul'); nav.className = 'nav nav-tabs mb-3'; nav.role = 'tablist';
@@ -717,6 +749,23 @@
           const name = element.label || (path.split('.').slice(-1)[0] || '');
           const required = this._isPathRequired(schema, path);
           const effective = this._applyUiOptionsToSchema(subSchema, element.options);
+
+          const custom = this._pickCustomRenderer(element, effective, path, name, required);
+          if (custom) {
+            const ctx = {
+              element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema,
+              path, label: name, required, instance: this,
+              utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) },
+              emit: (ev, detail) => this._emit(ev, detail),
+              setValue: (v) => this.setValue(path, v),
+              getValue: () => this.getValue(path),
+              validate: () => this.validate(),
+            };
+            const rendered = custom.render(ctx);
+            if (rendered && !rendered.dataset.path) rendered.dataset.path = path;
+            return rendered || document.createElement('div');
+          }
+
           const el = this._createControlBySchema(name, effective, path, required);
           return el;
         }
@@ -760,6 +809,23 @@
           if (element.renderer === 'ListWithDetail') { rendered = this._renderListWithDetail(element, schema); break; }
           const subSchema = this._findSchemaForPath(schema, path); const name = (element.label || (path.split('.').slice(-1)[0] || ''));
           const required = this._isPathRequired(schema, path); const effective = this._applyUiOptionsToSchema(subSchema, element.options);
+
+          const custom = this._pickCustomRenderer(element, effective, path, name, required);
+          if (custom) {
+            const ctx = {
+              element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema,
+              path, label: name, required, instance: this,
+              utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) },
+              emit: (ev, detail) => this._emit(ev, detail),
+              setValue: (v) => this.setValue(path, v),
+              getValue: () => this.getValue(path),
+              validate: () => this.validate(),
+            };
+            rendered = custom.render(ctx) || document.createElement('div');
+            if (rendered && !rendered.dataset.path) rendered.dataset.path = path;
+            break;
+          }
+
           rendered = this._createControlBySchema(name, effective, path, required); break;
         }
         case 'Categorization': { rendered = this._renderCategorization(element, schema); break; }
@@ -938,5 +1004,8 @@
 
   function create(rootEl, options) { return new SchemaForm(rootEl, options); }
 
-  global.SchemaFormLib = { SchemaForm, create };
+  function registerRenderer(def) { if (def && typeof def.render === 'function') globalRenderers.push(def); }
+  function clearRenderers() { globalRenderers.length = 0; }
+
+  global.SchemaFormLib = { SchemaForm, create, registerRenderer, clearRenderers };
 })(typeof window !== 'undefined' ? window : globalThis);
