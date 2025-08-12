@@ -22,7 +22,7 @@
     <main class="container my-4">
       <div class="row g-4">
         <div class="col-12 col-lg-5">
-          <div class="card h-100">
+          <div class="card h-100 mb-4">
             <div class="card-header d-flex align-items-center justify-content-between">
               <span>Schema</span>
               <div class="btn-group" role="group">
@@ -32,14 +32,34 @@
               </div>
             </div>
             <div class="card-body">
-              <textarea id="schema-input" class="form-control font-monospace" rows="18" placeholder="Paste JSON Schema here..."></textarea>
+              <textarea id="schema-input" class="form-control font-monospace" rows="14" placeholder="Paste JSON Schema here..."></textarea>
               <div class="form-text mt-2">
-                Supports common JSON Schema keywords: <code>type</code>, <code>properties</code>, <code>required</code>, <code>enum</code>, <code>items</code>, <code>default</code>, <code>format</code>, constraints and nesting.
+                Supports common JSON Schema keywords: <code>type</code>, <code>properties</code>, <code>required</code>, <code>enum</code>, <code>items</code>, <code>default</code>, <code>format</code>, constraints and nesting. Also supports <code>oneOf</code>/<code>anyOf</code>/<code>allOf</code>.
               </div>
             </div>
             <div class="card-footer d-flex gap-2">
               <button id="generate-form" class="btn btn-primary" type="button">Generate form</button>
               <button id="clear-schema" class="btn btn-outline-secondary" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div class="card h-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <span>UI Schema (optional)</span>
+              <div class="btn-group" role="group">
+                <button id="load-ui-example" class="btn btn-sm btn-outline-secondary" type="button">Load example</button>
+                <label class="btn btn-sm btn-outline-secondary mb-0" for="uischema-file">Upload</label>
+                <input id="uischema-file" type="file" accept="application/json,.json" class="d-none" />
+              </div>
+            </div>
+            <div class="card-body">
+              <textarea id="uischema-input" class="form-control font-monospace" rows="10" placeholder="Optional UI Schema: layout and controls (e.g., VerticalLayout, HorizontalLayout, Group, Control)"></textarea>
+              <div class="form-text mt-2">
+                Example Control: { "type": "Control", "label": "Name", "scope": "#/properties/name" }
+              </div>
+            </div>
+            <div class="card-footer d-flex gap-2">
+              <button id="clear-uischema" class="btn btn-outline-secondary" type="button">Clear</button>
             </div>
           </div>
         </div>
@@ -48,7 +68,11 @@
           <div class="card mb-4">
             <div class="card-header d-flex align-items-center justify-content-between">
               <span>Form</span>
-              <div class="d-flex gap-2">
+              <div class="d-flex align-items-center gap-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="live-validate" />
+                  <label class="form-check-label" for="live-validate">Live validate</label>
+                </div>
                 <button id="reset-form" class="btn btn-sm btn-outline-secondary" type="button">Reset</button>
               </div>
             </div>

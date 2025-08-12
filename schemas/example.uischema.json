@@ -1,0 +1,28 @@
+{
+  "type": "VerticalLayout",
+  "elements": [
+    { "type": "Group", "label": "Identity", "elements": [
+      { "type": "HorizontalLayout", "elements": [
+        { "type": "Control", "label": "Full Name", "scope": "#/properties/name" },
+        { "type": "Control", "label": "Email", "scope": "#/properties/email" }
+      ]},
+      { "type": "Control", "label": "Age", "scope": "#/properties/age" },
+      { "type": "Control", "label": "Website", "scope": "#/properties/website" }
+    ]},
+    { "type": "Group", "label": "Preferences", "elements": [
+      { "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
+      { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
+      { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
+    ]},
+    { "type": "Group", "label": "Address", "elements": [
+      { "type": "HorizontalLayout", "elements": [
+        { "type": "Control", "label": "Street", "scope": "#/properties/address/properties/street" },
+        { "type": "Control", "label": "City", "scope": "#/properties/address/properties/city" },
+        { "type": "Control", "label": "ZIP", "scope": "#/properties/address/properties/zip" }
+      ]}
+    ]},
+    { "type": "Group", "label": "Work", "elements": [
+      { "type": "Control", "label": "Work History", "scope": "#/properties/workHistory" }
+    ]}
+  ]
+}

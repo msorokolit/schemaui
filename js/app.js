@@ -16,8 +16,15 @@
   const exportBtn = document.getElementById('export-json');
   const formContainer = document.getElementById('generated-form');
   const outputPre = document.getElementById('output');
+  // UISchema elements
+  const uiSchemaInput = document.getElementById('uischema-input');
+  const uiSchemaFile = document.getElementById('uischema-file');
+  const loadUiExampleBtn = document.getElementById('load-ui-example');
+  const clearUiSchemaBtn = document.getElementById('clear-uischema');
+  const liveValidateToggle = document.getElementById('live-validate');
 
   let currentSchema = null;
+  let currentUiSchema = null;
 
   // Utilities
   function safeIdFromPath(path) {
@@ -38,6 +45,19 @@
     small.className = 'form-text';
     small.textContent = text;
     return small;
+  }
+
+  function withInvalidFeedback(input) {
+    // attach bootstrap invalid feedback container
+    const feedback = document.createElement('div');
+    feedback.className = 'invalid-feedback';
+    feedback.textContent = input.getAttribute('data-invalid-message') || 'Please provide a valid value.';
+    input.addEventListener('input', () => {
+      if (liveValidateToggle && liveValidateToggle.checked) {
+        input.classList.toggle('is-invalid', !input.checkValidity());
+      }
+    });
+    return feedback;
   }
 
   function setConstraints(input, schema) {
@@ -110,10 +130,11 @@
         opt.textContent = '-- select --';
         control.appendChild(opt);
       }
-      schema.enum.forEach((val) => {
+      schema.enum.forEach((val, idx) => {
         const opt = document.createElement('option');
         opt.value = String(val);
-        opt.textContent = String(val);
+        const labels = schema.enumNames || schema['x-enumNames'];
+        opt.textContent = labels && labels[idx] ? String(labels[idx]) : String(val);
         control.appendChild(opt);
       });
       applyDefault(control, schema);
@@ -122,7 +143,21 @@
       input.className = 'form-control';
       input.id = id;
       input.name = path;
-      input.type = schema.format ? formatToInputType(schema.format) : 'text';
+      const widget = schema['x-ui-widget'];
+      if (widget === 'textarea' || schema.format === 'textarea') {
+        const ta = document.createElement('textarea');
+        ta.className = 'form-control';
+        ta.id = id;
+        ta.name = path;
+        setConstraints(ta, schema);
+        applyDefault(ta, schema);
+        if (isRequired) ta.required = true;
+        wrapper.appendChild(label);
+        wrapper.appendChild(ta);
+        if (schema.description) wrapper.appendChild(createHelpText(schema.description));
+        return wrapper;
+      }
+      input.type = widget === 'password' || schema.format === 'password' ? 'password' : (schema.format ? formatToInputType(schema.format) : 'text');
       setConstraints(input, schema);
       applyDefault(input, schema);
       control = input;
@@ -131,7 +166,8 @@
       input.className = 'form-control';
       input.id = id;
       input.name = path;
-      input.type = 'number';
+      const widget = schema['x-ui-widget'];
+      input.type = widget === 'range' ? 'range' : 'number';
       if (schema.type === 'integer' && !schema.multipleOf) input.step = '1';
       setConstraints(input, schema);
       applyDefault(input, schema);
@@ -167,12 +203,68 @@
 
     wrapper.appendChild(label);
     wrapper.appendChild(control);
+    wrapper.appendChild(withInvalidFeedback(control));
     if (schema.description) wrapper.appendChild(createHelpText(schema.description));
 
     return wrapper;
   }
 
+  function createOneAnyOfGroup(name, schema, path, isRequired) {
+    const isOne = Array.isArray(schema.oneOf);
+    const options = isOne ? schema.oneOf : schema.anyOf || [];
+    const container = document.createElement('div');
+    container.className = 'mb-3';
+
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.textContent = getTitle(name, schema) + (isRequired ? ' *' : '');
+    container.appendChild(label);
+
+    const select = document.createElement('select');
+    select.className = 'form-select mb-2';
+    options.forEach((opt, idx) => {
+      const o = document.createElement('option');
+      o.value = String(idx);
+      o.textContent = opt.title || (isOne ? `oneOf #${idx + 1}` : `anyOf #${idx + 1}`);
+      select.appendChild(o);
+    });
+    container.appendChild(select);
+
+    const slot = document.createElement('div');
+    container.appendChild(slot);
+
+    function renderSelected() {
+      slot.innerHTML = '';
+      const idx = Number(select.value);
+      const chosen = options[idx] || {};
+      const child = createControlBySchema('', chosen, path, false);
+      slot.appendChild(child);
+    }
+
+    select.addEventListener('change', renderSelected);
+    select.value = '0';
+    renderSelected();
+    return container;
+  }
+
+  function mergeAllOf(schema) {
+    if (!Array.isArray(schema.allOf)) return schema;
+    const merged = { ...schema };
+    delete merged.allOf;
+    for (const sub of schema.allOf) {
+      if (sub.type === 'object' && sub.properties) {
+        merged.type = 'object';
+        merged.properties = { ...(merged.properties || {}), ...sub.properties };
+        if (sub.required) {
+          merged.required = Array.from(new Set([...(merged.required || []), ...sub.required]));
+        }
+      }
+    }
+    return merged;
+  }
+
   function createObjectGroup(name, schema, path, requiredSet) {
+    schema = mergeAllOf(schema);
     const fieldset = document.createElement('fieldset');
     fieldset.className = 'border rounded p-3 mb-3';
 
@@ -189,8 +281,8 @@
     Object.keys(properties).forEach((propName) => {
       const propSchema = properties[propName];
       const childPath = path ? `${path}.${propName}` : propName;
-      const isRequired = required.has(propName);
-      const element = createControlBySchema(propName, propSchema, childPath, isRequired);
+      const isReq = required.has(propName);
+      const element = createControlBySchema(propName, propSchema, childPath, isReq);
       fieldset.appendChild(element);
     });
 
@@ -226,22 +318,52 @@
     controls.appendChild(addBtn);
     container.appendChild(controls);
 
+    const minItems = typeof schema.minItems === 'number' ? schema.minItems : 0;
+    const maxItems = typeof schema.maxItems === 'number' ? schema.maxItems : Infinity;
+
+    function updateAddState() {
+      addBtn.disabled = list.children.length >= maxItems;
+    }
+
+    function updateRemoveState(itemWrapper) {
+      const removeBtn = itemWrapper.querySelector('.btn-remove');
+      if (!removeBtn) return;
+      removeBtn.disabled = list.children.length <= minItems;
+    }
+
     function addItem(initialData) {
       const index = list.children.length;
       const itemWrapper = document.createElement('div');
       itemWrapper.className = 'border rounded p-3 position-relative';
 
+      const btnGroup = document.createElement('div');
+      btnGroup.className = 'position-absolute d-flex gap-2';
+      btnGroup.style.top = '8px';
+      btnGroup.style.right = '8px';
+
+      const upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.className = 'btn btn-sm btn-outline-secondary';
+      upBtn.textContent = '↑';
+
+      const downBtn = document.createElement('button');
+      downBtn.type = 'button';
+      downBtn.className = 'btn btn-sm btn-outline-secondary';
+      downBtn.textContent = '↓';
+
       const removeBtn = document.createElement('button');
       removeBtn.type = 'button';
-      removeBtn.className = 'btn btn-sm btn-outline-danger position-absolute';
-      removeBtn.style.top = '8px';
-      removeBtn.style.right = '8px';
+      removeBtn.className = 'btn btn-sm btn-outline-danger btn-remove';
       removeBtn.textContent = 'Remove';
+
+      btnGroup.appendChild(upBtn);
+      btnGroup.appendChild(downBtn);
+      btnGroup.appendChild(removeBtn);
 
       const itemPath = `${path}[${index}]`;
       const itemContent = createControlBySchema('', schema.items || {}, itemPath, false);
 
-      itemWrapper.appendChild(removeBtn);
+      itemWrapper.appendChild(btnGroup);
       itemWrapper.appendChild(itemContent);
       list.appendChild(itemWrapper);
 
@@ -250,16 +372,39 @@
       }
 
       removeBtn.addEventListener('click', () => {
+        if (list.children.length <= minItems) return;
         itemWrapper.remove();
         renumberArrayItemNames(list, path);
+        Array.from(list.children).forEach(updateRemoveState);
+        updateAddState();
       });
+
+      upBtn.addEventListener('click', () => {
+        const prev = itemWrapper.previousElementSibling;
+        if (prev) {
+          list.insertBefore(itemWrapper, prev);
+          renumberArrayItemNames(list, path);
+        }
+      });
+
+      downBtn.addEventListener('click', () => {
+        const next = itemWrapper.nextElementSibling;
+        if (next) {
+          list.insertBefore(next, itemWrapper);
+          renumberArrayItemNames(list, path);
+        }
+      });
+
+      updateRemoveState(itemWrapper);
+      updateAddState();
     }
 
     addBtn.addEventListener('click', () => addItem());
 
-    // If default is present for arrays
     if (Array.isArray(schema.default)) {
       schema.default.forEach((val) => addItem(val));
+    } else if (minItems > 0) {
+      for (let i = 0; i < minItems; i++) addItem();
     }
 
     return container;
@@ -285,17 +430,19 @@
     if (!schema || typeof schema !== 'object') {
       return createInputControl(name, { type: 'string' }, path, isRequired);
     }
-
+    if (schema.allOf) {
+      schema = mergeAllOf(schema);
+    }
+    if (schema.oneOf || schema.anyOf) {
+      return createOneAnyOfGroup(name, schema, path, isRequired);
+    }
     const type = schema.type;
-
     if (type === 'object' || (schema.properties && !type)) {
       return createObjectGroup(name, schema, path, isRequired);
     }
-
     if (type === 'array') {
       return createArrayGroup(name, schema, path, isRequired);
     }
-
     return createInputControl(name, schema, path, isRequired);
   }
 
@@ -303,11 +450,101 @@
     formContainer.innerHTML = '';
   }
 
-  function generateFormFromSchema(schema) {
+  function pointerToPath(pointer) {
+    // e.g. #/properties/address/properties/city -> address.city
+    if (!pointer) return '';
+    const noHash = pointer.startsWith('#') ? pointer.slice(1) : pointer;
+    const parts = noHash.split('/').filter(Boolean);
+    const pathParts = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (parts[i] === 'properties') {
+        i++;
+        if (i < parts.length) pathParts.push(parts[i]);
+      } else if (parts[i] === 'items') {
+        // arrays: keep property path; items indicates array items
+        // no push needed here
+      }
+    }
+    return pathParts.join('.');
+  }
+
+  function isPathRequired(schema, path) {
+    if (!path) return false;
+    const segments = path.split('.');
+    let node = schema;
+    for (let i = 0; i < segments.length; i++) {
+      const prop = segments[i];
+      if (!node || !node.properties) return false;
+      const req = node.required || [];
+      if (i === segments.length - 1) return req.includes(prop);
+      node = node.properties[prop];
+    }
+    return false;
+  }
+
+  function renderUiElement(element, schema) {
+    if (!element || typeof element !== 'object') return document.createElement('div');
+    switch (element.type) {
+      case 'VerticalLayout': {
+        const c = document.createElement('div');
+        (element.elements || []).forEach((el) => c.appendChild(renderUiElement(el, schema)));
+        return c;
+      }
+      case 'HorizontalLayout': {
+        const row = document.createElement('div');
+        row.className = 'row g-3';
+        const children = element.elements || [];
+        children.forEach((el) => {
+          const col = document.createElement('div');
+          col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`;
+          col.appendChild(renderUiElement(el, schema));
+          row.appendChild(col);
+        });
+        return row;
+      }
+      case 'Group': {
+        const fs = document.createElement('fieldset');
+        fs.className = 'border rounded p-3 mb-3';
+        if (element.label) {
+          const lg = document.createElement('legend');
+          lg.className = 'float-none w-auto px-2';
+          lg.textContent = element.label;
+          fs.appendChild(lg);
+        }
+        (element.elements || []).forEach((el) => fs.appendChild(renderUiElement(el, schema)));
+        return fs;
+      }
+      case 'Control': {
+        const scope = element.scope;
+        const path = pointerToPath(scope);
+        const subSchema = findSchemaForPath(schema, path);
+        const name = (element.label || (path.split('.').slice(-1)[0] || ''));
+        const required = isPathRequired(schema, path);
+        return createControlBySchema(name, subSchema, path, required);
+      }
+      default:
+        return document.createElement('div');
+    }
+  }
+
+  function generateFormFromSchema(schema, uiSchema) {
     clearForm();
     currentSchema = schema;
-    const element = createControlBySchema('', schema, '', false);
+    currentUiSchema = uiSchema || null;
+    let element;
+    if (uiSchema) {
+      element = renderUiElement(uiSchema, schema);
+    } else {
+      element = createControlBySchema('', schema, '', false);
+    }
     formContainer.appendChild(element);
+    if (liveValidateToggle) {
+      formContainer.querySelectorAll('input,select,textarea').forEach((el) => {
+        el.addEventListener('blur', () => {
+          if (liveValidateToggle.checked) el.classList.toggle('is-invalid', !el.checkValidity());
+        });
+      });
+    }
   }
 
   function parseSchemaText(text) {
@@ -317,6 +554,16 @@
       return obj;
     } catch (err) {
       alert('Invalid JSON Schema: ' + err.message);
+      return null;
+    }
+  }
+
+  function parseJson(text, label) {
+    try {
+      const obj = JSON.parse(text);
+      return obj;
+    } catch (err) {
+      alert(`Invalid ${label}: ` + err.message);
       return null;
     }
   }
@@ -522,20 +769,43 @@
     schemaInput.value = text;
   });
 
+  loadUiExampleBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch('schemas/example.uischema.json');
+      const text = await res.text();
+      uiSchemaInput.value = text;
+    } catch (e) {
+      alert('Failed to load example UI schema.');
+    }
+  });
+
+  uiSchemaFile.addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    uiSchemaInput.value = text;
+  });
+
   clearSchemaBtn.addEventListener('click', () => {
     schemaInput.value = '';
+  });
+
+  clearUiSchemaBtn.addEventListener('click', () => {
+    uiSchemaInput.value = '';
   });
 
   generateBtn.addEventListener('click', () => {
     const schema = parseSchemaText(schemaInput.value.trim());
     if (!schema) return;
-    generateFormFromSchema(schema);
+    const uiSchema = uiSchemaInput.value.trim() ? parseJson(uiSchemaInput.value.trim(), 'UI Schema') : null;
+    if (uiSchemaInput.value.trim() && !uiSchema) return; // parse failed
+    generateFormFromSchema(schema, uiSchema || null);
     outputPre.textContent = '';
   });
 
   resetFormBtn.addEventListener('click', () => {
     if (!currentSchema) return;
-    generateFormFromSchema(currentSchema);
+    generateFormFromSchema(currentSchema, currentUiSchema);
     outputPre.textContent = '';
   });
 
@@ -571,10 +841,16 @@
         const text = await res.text();
         schemaInput.value = text;
         const schema = parseSchemaText(text);
+        const uiRes = await fetch('schemas/example.uischema.json');
+        if (uiRes.ok) {
+          const uiText = await uiRes.text();
+          uiSchemaInput.value = uiText;
+          const uiSchema = parseJson(uiText, 'UI Schema');
+          generateFormFromSchema(schema, uiSchema);
+          return;
+        }
         if (schema) generateFormFromSchema(schema);
       }
-    } catch (_) {
-      // ignore
-    }
+    } catch (_) {}
   })();
 })();
