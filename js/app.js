@@ -29,6 +29,28 @@
   let ajvInstance = null;
   let ajvValidate = null;
 
+  // Simple event bus
+  const bus = new Map();
+  function on(event, handler) {
+    if (!bus.has(event)) bus.set(event, new Set());
+    bus.get(event).add(handler);
+  }
+  function off(event, handler) {
+    const set = bus.get(event);
+    if (set) set.delete(handler);
+  }
+  function emit(event, detail) {
+    const payload = { event, detail };
+    const set = bus.get(event);
+    if (set) set.forEach((fn) => { try { fn(payload); } catch (_) {} });
+    // namespaced field change events: field:change:path
+    if (event === 'field:change' && detail && detail.path) {
+      const ns = `field:change:${detail.path}`;
+      const setNs = bus.get(ns);
+      if (setNs) setNs.forEach((fn) => { try { fn(payload); } catch (_) {} });
+    }
+  }
+
   // Utilities
   function safeIdFromPath(path) {
     return path.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -59,6 +81,14 @@
         input.classList.toggle('is-invalid', !input.checkValidity());
         validateAndShowAjvErrors();
       }
+      const path = input.name;
+      emit('field:change', { path, value: input.value });
+      emit('form:change', { data: getCurrentData() });
+    });
+    input.addEventListener('change', () => {
+      const path = input.name;
+      emit('field:change', { path, value: input.value });
+      emit('form:change', { data: getCurrentData() });
     });
     return feedback;
   }
@@ -112,6 +142,7 @@
   function createFileControl(name, schema, path, isRequired) {
     const wrapper = document.createElement('div');
     wrapper.className = 'mb-3';
+    wrapper.dataset.path = path;
     const id = safeIdFromPath(path);
     const label = document.createElement('label');
     label.className = 'form-label';
@@ -140,6 +171,8 @@
         const dataUrl = reader.result;
         hidden.value = String(dataUrl);
         if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+        emit('field:change', { path, value: hidden.value });
+        emit('form:change', { data: getCurrentData() });
       };
       reader.readAsDataURL(file);
     });
@@ -265,6 +298,7 @@
     const options = isOne ? schema.oneOf : schema.anyOf || [];
     const container = document.createElement('div');
     container.className = 'mb-3';
+    container.dataset.path = path;
 
     const label = document.createElement('label');
     label.className = 'form-label';
@@ -292,7 +326,11 @@
       slot.appendChild(child);
     }
 
-    select.addEventListener('change', renderSelected);
+    select.addEventListener('change', () => {
+      renderSelected();
+      emit('field:change', { path, value: select.value });
+      emit('form:change', { data: getCurrentData() });
+    });
     select.value = '0';
     renderSelected();
     return container;
@@ -348,6 +386,7 @@
   function createArrayGroup(name, schema, path, isRequired) {
     const container = document.createElement('div');
     container.className = 'mb-3';
+    container.dataset.path = path;
 
     const label = document.createElement('label');
     label.className = 'form-label';
@@ -430,6 +469,7 @@
         Array.from(list.children).forEach(updateRemoveState);
         updateAddState();
         if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+        emit('form:change', { data: getCurrentData() });
       });
 
       upBtn.addEventListener('click', () => {
@@ -438,6 +478,7 @@
           list.insertBefore(itemWrapper, prev);
           renumberArrayItemNames(list, path);
           if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+          emit('form:change', { data: getCurrentData() });
         }
       });
 
@@ -447,16 +488,19 @@
           list.insertBefore(next, itemWrapper);
           renumberArrayItemNames(list, path);
           if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+          emit('form:change', { data: getCurrentData() });
         }
       });
 
       updateRemoveState(itemWrapper);
       updateAddState();
+      emit('form:change', { data: getCurrentData() });
     }
 
     addBtn.addEventListener('click', () => {
       addItem();
       if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+      emit('form:change', { data: getCurrentData() });
     });
 
     if (Array.isArray(schema.default)) {
@@ -471,12 +515,11 @@
   function createArrayTable(scopePath, arraySchema) {
     const container = document.createElement('div');
     container.className = 'mb-3';
+    container.dataset.path = scopePath;
     const table = document.createElement('table');
     table.className = 'table table-sm table-striped align-middle';
     const thead = document.createElement('thead');
     const tbody = document.createElement('tbody');
-    const tfoot = document.createElement('div');
-    tfoot.className = 'mt-2';
 
     const properties = (arraySchema.items && arraySchema.items.properties) || {};
     const cols = Object.keys(properties);
@@ -511,6 +554,7 @@
         tr.remove();
         renumberArrayItemNames(tbody, scopePath);
         if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+        emit('form:change', { data: getCurrentData() });
       });
       tdAct.appendChild(rm);
       tr.appendChild(tdAct);
@@ -531,6 +575,7 @@
     addBtn.addEventListener('click', () => {
       addRow();
       if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+      emit('form:change', { data: getCurrentData() });
     });
 
     container.appendChild(table);
@@ -652,7 +697,6 @@
   }
 
   function renderListWithDetail(element, schema) {
-    // element.scope -> array path; element.detail -> ui schema for item
     const arrayPath = pointerToPath(element.scope || '');
     const arraySchema = findSchemaForPath(schema, arrayPath);
     const wrapper = document.createElement('div');
@@ -674,7 +718,6 @@
 
     function renderList() {
       listGroup.innerHTML = '';
-      // Count items by checking existing controls with name starting with arrayPath
       const regex = new RegExp(`^${escapeRegExp(arrayPath)}\\\[(\\d+)\\]`);
       const names = new Set();
       formContainer.querySelectorAll('[name]').forEach((el) => {
@@ -700,7 +743,6 @@
       detailCol.innerHTML = '';
       const itemPath = `${arrayPath}[${selectedIndex}]`;
       if (element.detail) {
-        // Render using detail schema: controls assume root, so we adapt Control resolution
         const adapted = renderUiElementWithBase(element.detail, schema, itemPath);
         detailCol.appendChild(adapted);
       } else {
@@ -710,13 +752,12 @@
     }
 
     addBtn.addEventListener('click', () => {
-      // Append one new item using default array renderer at root
       const arrContainer = createArrayGroup('', arraySchema, arrayPath, false);
-      // extract just one item
       const addBtnInner = arrContainer.querySelector('button.btn-outline-primary');
       if (addBtnInner) addBtnInner.click();
       renderList();
       renderDetail();
+      emit('form:change', { data: getCurrentData() });
     });
 
     listCol.appendChild(addBtn);
@@ -743,7 +784,6 @@
         return el;
       }
       default: {
-        // For other layout elements, recurse normally
         return renderUiElement(element, schema);
       }
     }
@@ -761,7 +801,6 @@
   function renderUiElement(element, schema) {
     if (!element || typeof element !== 'object') return document.createElement('div');
 
-    // Apply rules container marker
     const container = document.createElement('div');
     container.className = 'mb-0';
     if (element.rule) {
@@ -929,7 +968,6 @@
   }
 
   function tokenizePath(path) {
-    // Convert a.b[0].c -> ['a', 'b', 0, 'c']
     const tokens = [];
     let i = 0;
     while (i < path.length) {
@@ -971,7 +1009,6 @@
   function collectDataFromForm(schema) {
     const formData = {};
 
-    // HTML5 validity
     if (!formContainer.checkValidity()) {
       formContainer.reportValidity();
     }
@@ -992,7 +1029,6 @@
       } else if (el.type === 'number' || el.type === 'range') {
         value = el.value === '' ? undefined : el.value;
       } else if (el.type === 'file') {
-        // handled by hidden input mirror
         return;
       } else {
         value = el.value;
@@ -1078,7 +1114,6 @@
     URL.revokeObjectURL(url);
   }
 
-  // Ajv integration
   async function initAjv(schema) {
     try {
       const AjvCtor = window.ajv || window.Ajv;
@@ -1096,7 +1131,7 @@
 
   function ajvInstancePathToNamePath(instancePath) {
     if (!instancePath) return '';
-    const parts = instancePath.split('/').slice(1); // remove leading ''
+    const parts = instancePath.split('/').slice(1);
     let name = '';
     parts.forEach((p) => {
       if (p === '') return;
@@ -1118,47 +1153,22 @@
   const i18n = {
     en: (err) => err.message || 'Invalid value',
     de: (err) => {
-      const map = {
-        required: 'Pflichtfeld fehlt',
-        minimum: 'Wert ist zu klein',
-        maximum: 'Wert ist zu groß',
-        pattern: 'Ungültiges Format',
-        type: 'Falscher Typ',
-      };
+      const map = { required: 'Pflichtfeld fehlt', minimum: 'Wert ist zu klein', maximum: 'Wert ist zu groß', pattern: 'Ungültiges Format', type: 'Falscher Typ' };
       return map[err.keyword] || err.message || 'Ungültiger Wert';
     },
     es: (err) => {
-      const map = {
-        required: 'Falta un campo obligatorio',
-        minimum: 'Valor demasiado bajo',
-        maximum: 'Valor demasiado alto',
-        pattern: 'Formato inválido',
-        type: 'Tipo incorrecto',
-      };
+      const map = { required: 'Falta un campo obligatorio', minimum: 'Valor demasiado bajo', maximum: 'Valor demasiado alto', pattern: 'Formato inválido', type: 'Tipo incorrecto' };
       return map[err.keyword] || err.message || 'Valor inválido';
     },
     fr: (err) => {
-      const map = {
-        required: 'Champ obligatoire manquant',
-        minimum: 'Valeur trop petite',
-        maximum: 'Valeur trop grande',
-        pattern: 'Format invalide',
-        type: 'Type incorrect',
-      };
+      const map = { required: 'Champ obligatoire manquant', minimum: 'Valeur trop petite', maximum: 'Valeur trop grande', pattern: 'Format invalide', type: 'Type incorrect' };
       return map[err.keyword] || err.message || 'Valeur invalide';
     },
     zh: (err) => {
-      const map = {
-        required: '缺少必填字段',
-        minimum: '值太小',
-        maximum: '值太大',
-        pattern: '格式无效',
-        type: '类型不正确',
-      };
+      const map = { required: '缺少必填字段', minimum: '值太小', maximum: '值太大', pattern: '格式无效', type: '类型不正确' };
       return map[err.keyword] || err.message || '无效的值';
     },
   };
-
   function getLocaleMessage(err) {
     const loc = (localeSelect && localeSelect.value) || 'en';
     const fn = i18n[loc] || i18n.en;
@@ -1188,6 +1198,7 @@
       });
     }
     applyUiRules();
+    emit('form:validate', { valid, errors: ajvValidate.errors || [] });
     return valid;
   }
 
@@ -1222,6 +1233,7 @@
     }
   }
 
+  const dynamicRules = [];
   function applyUiRules() {
     const data = getCurrentData();
     formContainer.querySelectorAll('[data-rule]').forEach((container) => {
@@ -1230,6 +1242,72 @@
         applyRuleToElement(container, rule, data);
       } catch (_) {}
     });
+    dynamicRules.forEach((rule) => {
+      const targetPath = pointerToPath(rule.target || rule.condition?.scope || '');
+      const targetEl = findContainerByPath(targetPath);
+      if (targetEl) applyRuleToElement(targetEl, rule, data);
+    });
+  }
+
+  function findContainerByPath(path) {
+    if (!path) return null;
+    let el = formContainer.querySelector(`[data-path="${CSS.escape(path)}"]`);
+    if (el) return el;
+    const input = formContainer.querySelector(`[name="${CSS.escape(path)}"]`);
+    if (!input) return null;
+    el = input.closest('[data-path]') || input.closest('.mb-3') || input.closest('fieldset');
+    return el;
+  }
+
+  function getValue(path) {
+    const data = getCurrentData();
+    const tokens = tokenizePath(path);
+    let node = data;
+    for (const t of tokens) {
+      if (node == null) return undefined;
+      node = typeof t === 'number' ? node[t] : node[t];
+    }
+    return node;
+  }
+
+  function setValue(path, value) {
+    const subSchema = findSchemaForPath(currentSchema, path);
+    setValuesByPath(formContainer, subSchema, path, value);
+    emit('field:change', { path, value });
+    emit('form:change', { data: getCurrentData() });
+    validateAndShowAjvErrors();
+  }
+
+  function setData(data) {
+    if (!currentSchema) return;
+    setValuesByPath(formContainer, currentSchema, '', data);
+    emit('form:change', { data: getCurrentData() });
+    validateAndShowAjvErrors();
+  }
+
+  function show(path) {
+    const el = findContainerByPath(path);
+    if (el) el.classList.remove('d-none');
+  }
+  function hide(path) {
+    const el = findContainerByPath(path);
+    if (el) el.classList.add('d-none');
+  }
+  function enable(path) {
+    const el = findContainerByPath(path);
+    if (el) el.querySelectorAll('input,select,textarea,button').forEach((e) => e.disabled = false);
+  }
+  function disable(path) {
+    const el = findContainerByPath(path);
+    if (el) el.querySelectorAll('input,select,textarea,button').forEach((e) => e.disabled = true);
+  }
+  function focus(path) {
+    const input = formContainer.querySelector(`[name="${CSS.escape(path)}"]`);
+    if (input) input.focus();
+  }
+
+  if (localeSelect) {
+    localeSelect.addEventListener('change', () => validateAndShowAjvErrors());
   }
 
   // Event handlers
@@ -1279,11 +1357,12 @@
     const schema = parseSchemaText(schemaInput.value.trim());
     if (!schema) return;
     const uiSchema = uiSchemaInput.value.trim() ? parseJson(uiSchemaInput.value.trim(), 'UI Schema') : null;
-    if (uiSchemaInput.value.trim() && !uiSchema) return; // parse failed
+    if (uiSchemaInput.value.trim() && !uiSchema) return;
     generateFormFromSchema(schema, uiSchema || null);
     await initAjv(schema);
     validateAndShowAjvErrors();
     outputPre.textContent = '';
+    emit('form:change', { data: getCurrentData() });
   });
 
   resetFormBtn.addEventListener('click', () => {
@@ -1291,11 +1370,13 @@
     generateFormFromSchema(currentSchema, currentUiSchema);
     validateAndShowAjvErrors();
     outputPre.textContent = '';
+    emit('form:change', { data: getCurrentData() });
   });
 
   clearFormBtn.addEventListener('click', () => {
     clearForm();
     outputPre.textContent = '';
+    emit('form:change', { data: {} });
   });
 
   submitBtn.addEventListener('click', () => {
@@ -1311,6 +1392,7 @@
     const data = collectDataFromForm(currentSchema);
     if (!data) return;
     outputPre.textContent = JSON.stringify(data, null, 2);
+    emit('form:submit', { data });
   });
 
   exportBtn.addEventListener('click', () => {
@@ -1322,11 +1404,6 @@
     download('form-data.json', content);
   });
 
-  if (localeSelect) {
-    localeSelect.addEventListener('change', () => validateAndShowAjvErrors());
-  }
-
-  // Autoload example on first load for convenience
   (async function init() {
     try {
       const res = await fetch('schemas/example.json');
@@ -1342,14 +1419,31 @@
           generateFormFromSchema(schema, uiSchema);
           await initAjv(schema);
           validateAndShowAjvErrors();
+          emit('form:change', { data: getCurrentData() });
           return;
         }
         if (schema) {
           generateFormFromSchema(schema);
           await initAjv(schema);
           validateAndShowAjvErrors();
+          emit('form:change', { data: getCurrentData() });
         }
       }
     } catch (_) {}
   })();
+
+  // Expose minimal API
+  window.SchemaForm = {
+    on, off,
+    getData: () => getCurrentData(),
+    setData,
+    getValue,
+    setValue,
+    show, hide, enable, disable, focus,
+    addRule: (rule) => { dynamicRules.push(rule); applyUiRules(); },
+    clearRules: () => { dynamicRules.length = 0; applyUiRules(); },
+    validate: () => ({ valid: validateAndShowAjvErrors(), errors: (ajvValidate && ajvValidate.errors) || [] }),
+    regenerate: () => { if (currentSchema) generateFormFromSchema(currentSchema, currentUiSchema); },
+    load: (schema, uiSchema) => { generateFormFromSchema(schema, uiSchema || null); initAjv(schema).then(validateAndShowAjvErrors); }
+  };
 })();
