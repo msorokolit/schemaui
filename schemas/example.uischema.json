@@ -1,28 +1,58 @@
 {
-  "type": "VerticalLayout",
+  "type": "Categorization",
   "elements": [
-    { "type": "Group", "label": "Identity", "elements": [
-      { "type": "HorizontalLayout", "elements": [
-        { "type": "Control", "label": "Full Name", "scope": "#/properties/name" },
-        { "type": "Control", "label": "Email", "scope": "#/properties/email" }
-      ]},
-      { "type": "Control", "label": "Age", "scope": "#/properties/age" },
-      { "type": "Control", "label": "Website", "scope": "#/properties/website" }
-    ]},
-    { "type": "Group", "label": "Preferences", "elements": [
-      { "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
-      { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
-      { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
-    ]},
-    { "type": "Group", "label": "Address", "elements": [
-      { "type": "HorizontalLayout", "elements": [
-        { "type": "Control", "label": "Street", "scope": "#/properties/address/properties/street" },
-        { "type": "Control", "label": "City", "scope": "#/properties/address/properties/city" },
-        { "type": "Control", "label": "ZIP", "scope": "#/properties/address/properties/zip" }
-      ]}
-    ]},
-    { "type": "Group", "label": "Work", "elements": [
-      { "type": "Control", "label": "Work History", "scope": "#/properties/workHistory" }
-    ]}
-  ]
+    {
+      "type": "Category",
+      "label": "Profile",
+      "elements": [
+        { "type": "Group", "label": "Identity", "elements": [
+          { "type": "HorizontalLayout", "elements": [
+            { "type": "Control", "label": "Full Name", "scope": "#/properties/name" },
+            { "type": "Control", "label": "Email", "scope": "#/properties/email" }
+          ]},
+          { "type": "Control", "label": "Age", "scope": "#/properties/age", "options": { "widget": "range" } },
+          { "type": "Control", "label": "Website", "scope": "#/properties/website", "options": { "placeholder": "https://example.com" } }
+        ]},
+        { "type": "Group", "label": "Preferences", "elements": [
+          { "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
+          { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
+          { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
+        ]}
+      ]
+    },
+    {
+      "type": "Category",
+      "label": "Address",
+      "elements": [
+        { "type": "Group", "label": "Address", "elements": [
+          { "type": "HorizontalLayout", "elements": [
+            { "type": "Control", "label": "Street", "scope": "#/properties/address/properties/street" },
+            { "type": "Control", "label": "City", "scope": "#/properties/address/properties/city" },
+            { "type": "Control", "label": "ZIP", "scope": "#/properties/address/properties/zip" }
+          ]}
+        ]}
+      ]
+    },
+    {
+      "type": "Category",
+      "label": "Work",
+      "elements": [
+        { "type": "Control", "label": "Work History (List With Detail)", "scope": "#/properties/workHistory", "renderer": "ListWithDetail", "detail": {
+          "type": "Group", "label": "Job", "elements": [
+            { "type": "Control", "label": "Company", "scope": "#/properties/company" },
+            { "type": "Control", "label": "Role", "scope": "#/properties/role" },
+            { "type": "Control", "label": "Years", "scope": "#/properties/years" }
+          ]
+        }},
+        { "type": "Control", "label": "Work History (Table)", "scope": "#/properties/workHistory", "renderer": "Table" }
+      ]
+    }
+  ],
+  "rule": {
+    "effect": "HIDE",
+    "condition": {
+      "scope": "#/properties/newsletter",
+      "equals": false
+    }
+  }
 }

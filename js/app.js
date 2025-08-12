@@ -25,6 +25,8 @@
 
   let currentSchema = null;
   let currentUiSchema = null;
+  let ajvInstance = null;
+  let ajvValidate = null;
 
   // Utilities
   function safeIdFromPath(path) {
@@ -48,13 +50,13 @@
   }
 
   function withInvalidFeedback(input) {
-    // attach bootstrap invalid feedback container
     const feedback = document.createElement('div');
     feedback.className = 'invalid-feedback';
     feedback.textContent = input.getAttribute('data-invalid-message') || 'Please provide a valid value.';
     input.addEventListener('input', () => {
       if (liveValidateToggle && liveValidateToggle.checked) {
         input.classList.toggle('is-invalid', !input.checkValidity());
+        validateAndShowAjvErrors();
       }
     });
     return feedback;
@@ -80,7 +82,7 @@
         input.checked = Boolean(schema.default);
       } else if (input.tagName === 'SELECT') {
         input.value = String(schema.default);
-      } else if (input.type === 'number') {
+      } else if (input.type === 'number' || input.type === 'range') {
         input.value = String(schema.default);
       } else {
         input.value = String(schema.default);
@@ -106,9 +108,53 @@
     }
   }
 
+  function createFileControl(name, schema, path, isRequired) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'mb-3';
+    const id = safeIdFromPath(path);
+    const label = document.createElement('label');
+    label.className = 'form-label';
+    label.setAttribute('for', id);
+    label.textContent = getTitle(name, schema) + (isRequired ? ' *' : '');
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.className = 'form-control';
+    input.id = id;
+    input.name = path;
+    if (schema.contentMediaType) input.accept = schema.contentMediaType;
+
+    const hidden = document.createElement('input');
+    hidden.type = 'hidden';
+    hidden.name = path;
+
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) {
+        hidden.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        hidden.value = String(dataUrl);
+        if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+      };
+      reader.readAsDataURL(file);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(input);
+    wrapper.appendChild(hidden);
+    wrapper.appendChild(withInvalidFeedback(input));
+    if (schema.description) wrapper.appendChild(createHelpText(schema.description));
+    return wrapper;
+  }
+
   function createInputControl(name, schema, path, isRequired) {
     const wrapper = document.createElement('div');
     wrapper.className = 'mb-3';
+    wrapper.dataset.path = path;
 
     const id = safeIdFromPath(path);
     const label = document.createElement('label');
@@ -154,8 +200,12 @@
         if (isRequired) ta.required = true;
         wrapper.appendChild(label);
         wrapper.appendChild(ta);
+        wrapper.appendChild(withInvalidFeedback(ta));
         if (schema.description) wrapper.appendChild(createHelpText(schema.description));
         return wrapper;
+      }
+      if (widget === 'file' || schema.contentEncoding === 'base64' || schema.contentMediaType) {
+        return createFileControl(name, schema, path, isRequired);
       }
       input.type = widget === 'password' || schema.format === 'password' ? 'password' : (schema.format ? formatToInputType(schema.format) : 'text');
       setConstraints(input, schema);
@@ -267,6 +317,7 @@
     schema = mergeAllOf(schema);
     const fieldset = document.createElement('fieldset');
     fieldset.className = 'border rounded p-3 mb-3';
+    if (path) fieldset.dataset.path = path;
 
     if (name) {
       const legend = document.createElement('legend');
@@ -377,6 +428,7 @@
         renumberArrayItemNames(list, path);
         Array.from(list.children).forEach(updateRemoveState);
         updateAddState();
+        if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
       });
 
       upBtn.addEventListener('click', () => {
@@ -384,6 +436,7 @@
         if (prev) {
           list.insertBefore(itemWrapper, prev);
           renumberArrayItemNames(list, path);
+          if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
         }
       });
 
@@ -392,6 +445,7 @@
         if (next) {
           list.insertBefore(next, itemWrapper);
           renumberArrayItemNames(list, path);
+          if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
         }
       });
 
@@ -399,13 +453,89 @@
       updateAddState();
     }
 
-    addBtn.addEventListener('click', () => addItem());
+    addBtn.addEventListener('click', () => {
+      addItem();
+      if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+    });
 
     if (Array.isArray(schema.default)) {
       schema.default.forEach((val) => addItem(val));
     } else if (minItems > 0) {
       for (let i = 0; i < minItems; i++) addItem();
     }
+
+    return container;
+  }
+
+  function createArrayTable(scopePath, arraySchema) {
+    const container = document.createElement('div');
+    container.className = 'mb-3';
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-striped align-middle';
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    const tfoot = document.createElement('div');
+    tfoot.className = 'mt-2';
+
+    const properties = (arraySchema.items && arraySchema.items.properties) || {};
+    const cols = Object.keys(properties);
+
+    const trh = document.createElement('tr');
+    cols.forEach((c) => {
+      const th = document.createElement('th');
+      th.textContent = getTitle(c, properties[c]);
+      trh.appendChild(th);
+    });
+    const thAct = document.createElement('th');
+    thAct.textContent = 'Actions';
+    trh.appendChild(thAct);
+    thead.appendChild(trh);
+
+    function addRow(initialData) {
+      const rowIndex = tbody.children.length;
+      const tr = document.createElement('tr');
+      cols.forEach((c) => {
+        const td = document.createElement('td');
+        const cellPath = `${scopePath}[${rowIndex}].${c}`;
+        const ctrl = createInputControl(c, properties[c], cellPath, false);
+        td.appendChild(ctrl);
+        tr.appendChild(td);
+      });
+      const tdAct = document.createElement('td');
+      const rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'btn btn-sm btn-outline-danger';
+      rm.textContent = 'Remove';
+      rm.addEventListener('click', () => {
+        tr.remove();
+        renumberArrayItemNames(tbody, scopePath);
+        if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+      });
+      tdAct.appendChild(rm);
+      tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+
+      if (initialData) {
+        Object.keys(initialData).forEach((k) => {
+          const input = tr.querySelector(`[name="${CSS.escape(`${scopePath}[${rowIndex}].${k}`)}"]`);
+          if (input) input.value = String(initialData[k]);
+        });
+      }
+    }
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-sm btn-outline-primary';
+    addBtn.textContent = 'Add row';
+    addBtn.addEventListener('click', () => {
+      addRow();
+      if (liveValidateToggle && liveValidateToggle.checked) validateAndShowAjvErrors();
+    });
+
+    container.appendChild(table);
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    container.appendChild(addBtn);
 
     return container;
   }
@@ -451,7 +581,6 @@
   }
 
   function pointerToPath(pointer) {
-    // e.g. #/properties/address/properties/city -> address.city
     if (!pointer) return '';
     const noHash = pointer.startsWith('#') ? pointer.slice(1) : pointer;
     const parts = noHash.split('/').filter(Boolean);
@@ -461,8 +590,7 @@
         i++;
         if (i < parts.length) pathParts.push(parts[i]);
       } else if (parts[i] === 'items') {
-        // arrays: keep property path; items indicates array items
-        // no push needed here
+        // arrays: no segment added here
       }
     }
     return pathParts.join('.');
@@ -482,13 +610,171 @@
     return false;
   }
 
+  function renderCategorization(element, schema) {
+    const tabsId = 'tabs_' + Math.random().toString(36).slice(2);
+    const nav = document.createElement('ul');
+    nav.className = 'nav nav-tabs mb-3';
+    nav.role = 'tablist';
+
+    const content = document.createElement('div');
+    content.className = 'tab-content';
+
+    (element.elements || []).forEach((cat, idx) => {
+      if (!cat || cat.type !== 'Category') return;
+      const tabId = `${tabsId}_tab_${idx}`;
+      const paneId = `${tabsId}_pane_${idx}`;
+      const li = document.createElement('li');
+      li.className = 'nav-item';
+      const a = document.createElement('button');
+      a.className = `nav-link${idx === 0 ? ' active' : ''}`;
+      a.id = tabId;
+      a.dataset.bsToggle = 'tab';
+      a.dataset.bsTarget = `#${paneId}`;
+      a.type = 'button';
+      a.role = 'tab';
+      a.textContent = cat.label || `Category ${idx + 1}`;
+      li.appendChild(a);
+      nav.appendChild(li);
+
+      const pane = document.createElement('div');
+      pane.className = `tab-pane fade${idx === 0 ? ' show active' : ''}`;
+      pane.id = paneId;
+      pane.role = 'tabpanel';
+      (cat.elements || []).forEach((el) => pane.appendChild(renderUiElement(el, schema)));
+      content.appendChild(pane);
+    });
+
+    const wrapper = document.createElement('div');
+    wrapper.appendChild(nav);
+    wrapper.appendChild(content);
+    return wrapper;
+  }
+
+  function renderListWithDetail(element, schema) {
+    // element.scope -> array path; element.detail -> ui schema for item
+    const arrayPath = pointerToPath(element.scope || '');
+    const arraySchema = findSchemaForPath(schema, arrayPath);
+    const wrapper = document.createElement('div');
+    wrapper.className = 'row g-3';
+
+    const listCol = document.createElement('div');
+    listCol.className = 'col-4';
+    const detailCol = document.createElement('div');
+    detailCol.className = 'col-8';
+    const listGroup = document.createElement('div');
+    listGroup.className = 'list-group';
+
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn btn-sm btn-outline-primary mb-2';
+    addBtn.textContent = 'Add item';
+
+    let selectedIndex = 0;
+
+    function renderList() {
+      listGroup.innerHTML = '';
+      // Count items by checking existing controls with name starting with arrayPath
+      const regex = new RegExp(`^${escapeRegExp(arrayPath)}\\\[(\\d+)\\]`);
+      const names = new Set();
+      formContainer.querySelectorAll('[name]').forEach((el) => {
+        const m = el.name.match(regex);
+        if (m) names.add(Number(m[1]));
+      });
+      const length = names.size || 0;
+      for (let i = 0; i < length; i++) {
+        const a = document.createElement('button');
+        a.type = 'button';
+        a.className = `list-group-item list-group-item-action${i === selectedIndex ? ' active' : ''}`;
+        a.textContent = `Item ${i + 1}`;
+        a.addEventListener('click', () => {
+          selectedIndex = i;
+          renderList();
+          renderDetail();
+        });
+        listGroup.appendChild(a);
+      }
+    }
+
+    function renderDetail() {
+      detailCol.innerHTML = '';
+      const itemPath = `${arrayPath}[${selectedIndex}]`;
+      if (element.detail) {
+        // Render using detail schema: controls assume root, so we adapt Control resolution
+        const adapted = renderUiElementWithBase(element.detail, schema, itemPath);
+        detailCol.appendChild(adapted);
+      } else {
+        const child = createControlBySchema('', arraySchema.items || {}, itemPath, false);
+        detailCol.appendChild(child);
+      }
+    }
+
+    addBtn.addEventListener('click', () => {
+      // Append one new item using default array renderer at root
+      const arrContainer = createArrayGroup('', arraySchema, arrayPath, false);
+      // extract just one item
+      const addBtnInner = arrContainer.querySelector('button.btn-outline-primary');
+      if (addBtnInner) addBtnInner.click();
+      renderList();
+      renderDetail();
+    });
+
+    listCol.appendChild(addBtn);
+    listCol.appendChild(listGroup);
+    wrapper.appendChild(listCol);
+    wrapper.appendChild(detailCol);
+
+    renderList();
+    renderDetail();
+
+    return wrapper;
+  }
+
+  function renderUiElementWithBase(element, schema, basePath) {
+    if (!element || typeof element !== 'object') return document.createElement('div');
+    switch (element.type) {
+      case 'Control': {
+        const path = `${basePath}${basePath ? '.' : ''}${pointerToPath(element.scope || '')}`;
+        const subSchema = findSchemaForPath(schema, path);
+        const name = element.label || (path.split('.').slice(-1)[0] || '');
+        const required = isPathRequired(schema, path);
+        const effective = applyUiOptionsToSchema(subSchema, element.options);
+        const el = createControlBySchema(name, effective, path, required);
+        return el;
+      }
+      default: {
+        // For other layout elements, recurse normally
+        return renderUiElement(element, schema);
+      }
+    }
+  }
+
+  function applyUiOptionsToSchema(schema, options) {
+    if (!options) return schema;
+    const copy = { ...schema };
+    if (options.widget) copy['x-ui-widget'] = options.widget;
+    if (options.placeholder) copy.placeholder = options.placeholder;
+    if (options.description) copy.description = options.description;
+    return copy;
+  }
+
   function renderUiElement(element, schema) {
     if (!element || typeof element !== 'object') return document.createElement('div');
+
+    // Apply rules container marker
+    const container = document.createElement('div');
+    container.className = 'mb-0';
+    if (element.rule) {
+      container.dataset.rule = JSON.stringify(element.rule);
+      container.dataset.ruleScope = element.rule.condition?.scope || '';
+    }
+
+    let rendered;
     switch (element.type) {
       case 'VerticalLayout': {
         const c = document.createElement('div');
         (element.elements || []).forEach((el) => c.appendChild(renderUiElement(el, schema)));
-        return c;
+        rendered = c;
+        break;
       }
       case 'HorizontalLayout': {
         const row = document.createElement('div');
@@ -500,7 +786,8 @@
           col.appendChild(renderUiElement(el, schema));
           row.appendChild(col);
         });
-        return row;
+        rendered = row;
+        break;
       }
       case 'Group': {
         const fs = document.createElement('fieldset');
@@ -512,19 +799,53 @@
           fs.appendChild(lg);
         }
         (element.elements || []).forEach((el) => fs.appendChild(renderUiElement(el, schema)));
-        return fs;
+        rendered = fs;
+        break;
       }
       case 'Control': {
         const scope = element.scope;
         const path = pointerToPath(scope);
+        if (element.renderer === 'Table') {
+          const arrSchema = findSchemaForPath(schema, path);
+          rendered = createArrayTable(path, arrSchema);
+          break;
+        }
+        if (element.renderer === 'ListWithDetail') {
+          rendered = renderListWithDetail(element, schema);
+          break;
+        }
         const subSchema = findSchemaForPath(schema, path);
         const name = (element.label || (path.split('.').slice(-1)[0] || ''));
         const required = isPathRequired(schema, path);
-        return createControlBySchema(name, subSchema, path, required);
+        const effective = applyUiOptionsToSchema(subSchema, element.options);
+        rendered = createControlBySchema(name, effective, path, required);
+        break;
+      }
+      case 'Categorization': {
+        rendered = renderCategorization(element, schema);
+        break;
+      }
+      case 'ListWithDetail': {
+        rendered = renderListWithDetail(element, schema);
+        break;
+      }
+      case 'Table': {
+        const path = pointerToPath(element.scope || '');
+        const arrSchema = findSchemaForPath(schema, path);
+        rendered = createArrayTable(path, arrSchema);
+        break;
       }
       default:
-        return document.createElement('div');
+        rendered = document.createElement('div');
     }
+
+    if (element.rule) {
+      rendered.dataset.rule = JSON.stringify(element.rule);
+      rendered.dataset.ruleScope = element.rule.condition?.scope || '';
+    }
+
+    container.appendChild(rendered);
+    return container;
   }
 
   function generateFormFromSchema(schema, uiSchema) {
@@ -543,8 +864,12 @@
         el.addEventListener('blur', () => {
           if (liveValidateToggle.checked) el.classList.toggle('is-invalid', !el.checkValidity());
         });
+        el.addEventListener('input', () => {
+          applyUiRules();
+        });
       });
     }
+    initAjv(schema).then(() => validateAndShowAjvErrors());
   }
 
   function parseSchemaText(text) {
@@ -645,13 +970,11 @@
   function collectDataFromForm(schema) {
     const formData = {};
 
-    // Check validity first
+    // HTML5 validity
     if (!formContainer.checkValidity()) {
       formContainer.reportValidity();
-      return null;
     }
 
-    // Handle checkboxes separately (they don't appear in FormData when unchecked)
     const allControls = formContainer.querySelectorAll('[name]');
 
     allControls.forEach((el) => {
@@ -665,8 +988,11 @@
         value = el.checked;
       } else if (el.tagName === 'SELECT') {
         value = el.value === '' ? undefined : el.value;
-      } else if (el.type === 'number') {
+      } else if (el.type === 'number' || el.type === 'range') {
         value = el.value === '' ? undefined : el.value;
+      } else if (el.type === 'file') {
+        // handled by hidden input mirror
+        return;
       } else {
         value = el.value;
       }
@@ -751,6 +1077,110 @@
     URL.revokeObjectURL(url);
   }
 
+  // Ajv integration
+  async function initAjv(schema) {
+    try {
+      const AjvCtor = window.ajv || window.Ajv;
+      if (!AjvCtor) return;
+      ajvInstance = new AjvCtor({ allErrors: true, strict: false });
+      if (window.ajvFormats) {
+        try { window.ajvFormats(ajvInstance); } catch (_) {}
+        try { window.ajvFormats.default && window.ajvFormats.default(ajvInstance); } catch (_) {}
+      }
+      ajvValidate = ajvInstance.compile(schema);
+    } catch (e) {
+      console.warn('AJV init failed', e);
+    }
+  }
+
+  function ajvInstancePathToNamePath(instancePath) {
+    if (!instancePath) return '';
+    const parts = instancePath.split('/').slice(1); // remove leading ''
+    let name = '';
+    parts.forEach((p) => {
+      if (p === '') return;
+      const key = p.replace(/~1/g, '/').replace(/~0/g, '~');
+      if (/^\d+$/.test(key)) {
+        name += `[${Number(key)}]`;
+      } else {
+        name += name ? `.${key}` : key;
+      }
+    });
+    return name;
+  }
+
+  function clearAllFieldErrors() {
+    formContainer.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    formContainer.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; });
+  }
+
+  function setFieldError(namePath, message) {
+    if (!namePath) return;
+    const el = formContainer.querySelector(`[name="${CSS.escape(namePath)}"]`);
+    if (!el) return;
+    el.classList.add('is-invalid');
+    const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback');
+    if (feedback) feedback.textContent = message || 'Invalid value';
+  }
+
+  function validateAndShowAjvErrors() {
+    if (!ajvValidate || !currentSchema) return true;
+    const data = collectDataFromForm(currentSchema);
+    if (!data) return false;
+    clearAllFieldErrors();
+    const valid = ajvValidate(data);
+    if (!valid && Array.isArray(ajvValidate.errors)) {
+      ajvValidate.errors.forEach((err) => {
+        const name = ajvInstancePathToNamePath(err.instancePath || '');
+        const msg = err.message || `${err.keyword} error`;
+        if (name) setFieldError(name, msg);
+      });
+    }
+    applyUiRules();
+    return valid;
+  }
+
+  function getCurrentData() {
+    if (!currentSchema) return {};
+    return collectDataFromForm(currentSchema) || {};
+  }
+
+  function evaluateCondition(cond, data) {
+    if (!cond) return true;
+    const path = pointerToPath(cond.scope || '');
+    const tokens = tokenizePath(path);
+    let node = data;
+    for (const t of tokens) {
+      if (node == null) break;
+      if (typeof t === 'number') node = Array.isArray(node) ? node[t] : undefined;
+      else node = node[t];
+    }
+    if ('equals' in cond) return node === cond.equals;
+    if (cond.schema && 'const' in cond.schema) return node === cond.schema.const;
+    return Boolean(node);
+  }
+
+  function applyRuleToElement(el, rule, data) {
+    const pass = evaluateCondition(rule.condition, data);
+    const effect = rule.effect || 'HIDE';
+    if (effect === 'HIDE') {
+      el.classList.toggle('d-none', !pass);
+    } else if (effect === 'DISABLE') {
+      const inputs = el.querySelectorAll('input,select,textarea,button');
+      inputs.forEach((inp) => inp.disabled = !pass);
+    }
+  }
+
+  function applyUiRules() {
+    const data = getCurrentData();
+    formContainer.querySelectorAll('[data-rule]').forEach((container) => {
+      try {
+        const rule = JSON.parse(container.dataset.rule);
+        applyRuleToElement(container, rule, data);
+      } catch (_) {}
+    });
+  }
+
   // Event handlers
   loadExampleBtn.addEventListener('click', async () => {
     try {
@@ -794,18 +1224,21 @@
     uiSchemaInput.value = '';
   });
 
-  generateBtn.addEventListener('click', () => {
+  generateBtn.addEventListener('click', async () => {
     const schema = parseSchemaText(schemaInput.value.trim());
     if (!schema) return;
     const uiSchema = uiSchemaInput.value.trim() ? parseJson(uiSchemaInput.value.trim(), 'UI Schema') : null;
     if (uiSchemaInput.value.trim() && !uiSchema) return; // parse failed
     generateFormFromSchema(schema, uiSchema || null);
+    await initAjv(schema);
+    validateAndShowAjvErrors();
     outputPre.textContent = '';
   });
 
   resetFormBtn.addEventListener('click', () => {
     if (!currentSchema) return;
     generateFormFromSchema(currentSchema, currentUiSchema);
+    validateAndShowAjvErrors();
     outputPre.textContent = '';
   });
 
@@ -817,6 +1250,11 @@
   submitBtn.addEventListener('click', () => {
     if (!currentSchema) {
       alert('Please generate a form from a schema first.');
+      return;
+    }
+    const ok = validateAndShowAjvErrors();
+    if (!ok) {
+      alert('Please fix validation errors.');
       return;
     }
     const data = collectDataFromForm(currentSchema);
@@ -847,9 +1285,15 @@
           uiSchemaInput.value = uiText;
           const uiSchema = parseJson(uiText, 'UI Schema');
           generateFormFromSchema(schema, uiSchema);
+          await initAjv(schema);
+          validateAndShowAjvErrors();
           return;
         }
-        if (schema) generateFormFromSchema(schema);
+        if (schema) {
+          generateFormFromSchema(schema);
+          await initAjv(schema);
+          validateAndShowAjvErrors();
+        }
       }
     } catch (_) {}
   })();
