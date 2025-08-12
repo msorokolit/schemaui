@@ -22,6 +22,7 @@
   const loadUiExampleBtn = document.getElementById('load-ui-example');
   const clearUiSchemaBtn = document.getElementById('clear-uischema');
   const liveValidateToggle = document.getElementById('live-validate');
+  const localeSelect = document.getElementById('locale');
 
   let currentSchema = null;
   let currentUiSchema = null;
@@ -1082,7 +1083,7 @@
     try {
       const AjvCtor = window.ajv || window.Ajv;
       if (!AjvCtor) return;
-      ajvInstance = new AjvCtor({ allErrors: true, strict: false });
+      ajvInstance = new AjvCtor({ allErrors: true, strict: false, messages: true });
       if (window.ajvFormats) {
         try { window.ajvFormats(ajvInstance); } catch (_) {}
         try { window.ajvFormats.default && window.ajvFormats.default(ajvInstance); } catch (_) {}
@@ -1114,12 +1115,63 @@
     formContainer.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; });
   }
 
-  function setFieldError(namePath, message) {
+  const i18n = {
+    en: (err) => err.message || 'Invalid value',
+    de: (err) => {
+      const map = {
+        required: 'Pflichtfeld fehlt',
+        minimum: 'Wert ist zu klein',
+        maximum: 'Wert ist zu groß',
+        pattern: 'Ungültiges Format',
+        type: 'Falscher Typ',
+      };
+      return map[err.keyword] || err.message || 'Ungültiger Wert';
+    },
+    es: (err) => {
+      const map = {
+        required: 'Falta un campo obligatorio',
+        minimum: 'Valor demasiado bajo',
+        maximum: 'Valor demasiado alto',
+        pattern: 'Formato inválido',
+        type: 'Tipo incorrecto',
+      };
+      return map[err.keyword] || err.message || 'Valor inválido';
+    },
+    fr: (err) => {
+      const map = {
+        required: 'Champ obligatoire manquant',
+        minimum: 'Valeur trop petite',
+        maximum: 'Valeur trop grande',
+        pattern: 'Format invalide',
+        type: 'Type incorrect',
+      };
+      return map[err.keyword] || err.message || 'Valeur invalide';
+    },
+    zh: (err) => {
+      const map = {
+        required: '缺少必填字段',
+        minimum: '值太小',
+        maximum: '值太大',
+        pattern: '格式无效',
+        type: '类型不正确',
+      };
+      return map[err.keyword] || err.message || '无效的值';
+    },
+  };
+
+  function getLocaleMessage(err) {
+    const loc = (localeSelect && localeSelect.value) || 'en';
+    const fn = i18n[loc] || i18n.en;
+    return fn(err);
+  }
+
+  function setFieldError(namePath, messageOrErr) {
     if (!namePath) return;
     const el = formContainer.querySelector(`[name="${CSS.escape(namePath)}"]`);
     if (!el) return;
     el.classList.add('is-invalid');
     const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback');
+    const message = typeof messageOrErr === 'string' ? messageOrErr : getLocaleMessage(messageOrErr);
     if (feedback) feedback.textContent = message || 'Invalid value';
   }
 
@@ -1132,8 +1184,7 @@
     if (!valid && Array.isArray(ajvValidate.errors)) {
       ajvValidate.errors.forEach((err) => {
         const name = ajvInstancePathToNamePath(err.instancePath || '');
-        const msg = err.message || `${err.keyword} error`;
-        if (name) setFieldError(name, msg);
+        if (name) setFieldError(name, err);
       });
     }
     applyUiRules();
@@ -1270,6 +1321,10 @@
     }
     download('form-data.json', content);
   });
+
+  if (localeSelect) {
+    localeSelect.addEventListener('change', () => validateAndShowAjvErrors());
+  }
 
   // Autoload example on first load for convenience
   (async function init() {
