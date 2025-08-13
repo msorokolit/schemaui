@@ -202,20 +202,7 @@
       if (this._data && this.schema) {
         this._setValuesByPath(this.formEl, this.schema, '', this._data);
       }
-      this.formEl.querySelectorAll('input,select,textarea').forEach((el) => {
-        el.addEventListener('blur', this._onInputValidate);
-        el.addEventListener('input', () => {
-          // Controlled: update state from element, then apply rules
-          this._updateStateFromElement(el);
-          this._applyUiRules();
-          this._emit('form:change', { data: this.getData() });
-        });
-        el.addEventListener('change', () => {
-          this._updateStateFromElement(el);
-          this._emit('field:change', { path: el.name, value: el.value });
-          this._emit('form:change', { data: this.getData() });
-        });
-      });
+      this._attachControlListeners(this.formEl);
     }
 
     _onInputValidate(e) {
@@ -592,6 +579,7 @@
       const container = document.createElement('div');
       container.className = 'mb-3';
       container.dataset.path = scopePath;
+      container.dataset.tablePath = scopePath;
       const table = document.createElement('table');
       table.className = 'table table-sm table-striped align-middle';
       const thead = document.createElement('thead');
@@ -605,29 +593,61 @@
       const thAct = document.createElement('th'); thAct.textContent = 'Actions'; trh.appendChild(thAct);
       thead.appendChild(trh);
 
-      const addRow = (initialData) => {
-        const rowIndex = tbody.children.length;
+      const renderBody = () => this._renderArrayTableBody(container, arraySchema, scopePath);
+
+      const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.textContent = 'Add row';
+      addBtn.addEventListener('click', () => {
+        const current = this.getValue(scopePath) || [];
+        const max = arraySchema.maxItems || Infinity;
+        if (current.length >= max) return;
+        const next = current.slice();
+        next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined);
+        this.setValue(scopePath, next);
+        renderBody();
+      });
+
+      container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
+      // Initial body render based on state
+      renderBody();
+      return container;
+    }
+
+    _renderArrayTableBody(container, arraySchema, basePath) {
+      const tbody = container.querySelector('tbody');
+      tbody.innerHTML = '';
+      const properties = (arraySchema.items && arraySchema.items.properties) || {};
+      const cols = Object.keys(properties);
+      const data = this.getData();
+      // Resolve array from state
+      const tokens = this._tokenizePath(basePath);
+      let arr = data;
+      for (const t of tokens) { arr = (arr == null) ? [] : (typeof t === 'number' ? (Array.isArray(arr) ? arr[t] : []) : arr[t]); }
+      if (!Array.isArray(arr)) arr = [];
+      arr.forEach((row, rowIndex) => {
         const tr = document.createElement('tr');
         cols.forEach((c) => {
           const td = document.createElement('td');
-          const cellPath = `${scopePath}[${rowIndex}].${c}`;
-          const ctrl = this._createInputControl(c, properties[c], cellPath, false);
+          const cellPath = `${basePath}[${rowIndex}].${c}`;
+          const ctrl = this._createInputControl('', properties[c], cellPath, false);
           td.appendChild(ctrl);
           tr.appendChild(td);
         });
         const tdAct = document.createElement('td');
         const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
-        rm.addEventListener('click', () => { tr.remove(); this._renumberArrayItemNames(tbody, scopePath); if (this.liveValidate) this.validate(); this._emit('form:change', { data: this.getData() }); });
-        tdAct.appendChild(rm); tr.appendChild(tdAct); tbody.appendChild(tr);
-
-        if (initialData) Object.keys(initialData).forEach((k) => { const input = tr.querySelector(`[name="${CSS.escape(`${scopePath}[${rowIndex}].${k}`)}"]`); if (input) input.value = String(initialData[k]); });
-      };
-
-      const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.textContent = 'Add row';
-      addBtn.addEventListener('click', () => { addRow(); if (this.liveValidate) this.validate(); this._emit('form:change', { data: this.getData() }); });
-
-      container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
-      return container;
+        rm.addEventListener('click', () => {
+          const current = this.getValue(basePath) || [];
+          const min = arraySchema.minItems || 0;
+          if (current.length <= min) return;
+          const next = current.filter((_, i) => i !== rowIndex);
+          this.setValue(basePath, next);
+          this._renderArrayTableBody(container, arraySchema, basePath);
+        });
+        tdAct.appendChild(rm); tr.appendChild(tdAct);
+        tbody.appendChild(tr);
+      });
+      // Update controls state and attach listeners for newly created inputs
+      this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
+      this._attachControlListeners(tbody);
     }
 
     _focusFirstInputInItem(basePath, index) {
@@ -988,6 +1008,12 @@
         const props = schema.properties || {};
         Object.keys(props).forEach((key) => { this._setValuesByPath(rootElement, props[key], basePath ? `${basePath}.${key}` : key, value[key]); });
       } else if (schema.type === 'array') {
+        // If table-based renderer exists, render table body
+        const tableContainer = rootElement.querySelector(`[data-table-path="${CSS.escape(basePath)}"]`);
+        if (tableContainer) {
+          this._renderArrayTableBody(tableContainer, schema, basePath);
+          return;
+        }
         const list = rootElement.querySelector(`.array-items[data-path="${CSS.escape(basePath)}"]`); if (!list) return; list.innerHTML = '';
         const arr = Array.isArray(value) ? value : [];
         arr.forEach((itemVal, idx) => {
@@ -1132,6 +1158,23 @@
       const next = JSON.parse(JSON.stringify(this._data || {}));
       if (coerced !== undefined) this._setNestedValue(next, name, coerced);
       this._data = next;
+    }
+
+    _attachControlListeners(rootEl) {
+      const inputs = rootEl.querySelectorAll('input,select,textarea');
+      inputs.forEach((el) => {
+        el.addEventListener('blur', this._onInputValidate);
+        el.addEventListener('input', () => {
+          this._updateStateFromElement(el);
+          this._applyUiRules();
+          this._emit('form:change', { data: this.getData() });
+        });
+        el.addEventListener('change', () => {
+          this._updateStateFromElement(el);
+          this._emit('field:change', { path: el.name, value: el.value });
+          this._emit('form:change', { data: this.getData() });
+        });
+      });
     }
   }
 
