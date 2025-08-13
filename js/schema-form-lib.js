@@ -29,6 +29,7 @@
 
       // Internal controlled state
       this._data = {};
+      this._initialData = {};
 
       // Event bus per instance
       this._bus = new Map();
@@ -48,6 +49,7 @@
       await this._initAjv(this.schema);
       // Initialize state from current DOM once
       this._data = this._collectDataFromForm(this.schema) || {};
+      this._initialData = JSON.parse(JSON.stringify(this._data));
       // Hydrate DOM values from state for consistency
       this._setValuesByPath(this.formEl, this.schema, '', this._data);
       // Do not validate immediately to avoid showing errors on first render
@@ -92,12 +94,26 @@
       return JSON.parse(JSON.stringify(this._data || {}));
     }
 
-    setData(data) {
+    setData(data, opts = {}) {
       if (!this.schema) return;
       this._data = JSON.parse(JSON.stringify(data || {}));
       this._setValuesByPath(this.formEl, this.schema, '', this._data);
       this._emit('form:change', { data: this.getData() });
-      this.validate();
+      if (!opts.skipValidate) this.validate();
+    }
+
+    reset() {
+      this.setData(this._initialData, { skipValidate: true });
+      this._clearAllFieldErrors();
+    }
+
+    clear() {
+      this.setData({}, { skipValidate: true });
+      this._clearAllFieldErrors();
+    }
+
+    clearValidation() {
+      this._clearAllFieldErrors();
     }
 
     getValue(path) {
