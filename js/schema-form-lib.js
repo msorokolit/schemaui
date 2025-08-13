@@ -862,6 +862,7 @@
         next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined);
         this.setValue(arrayPath, next);
         selectedIndex = next.length - 1;
+        // Hydrate detail from state (prevents clearing other items)
         renderList(); renderDetail();
       });
 
@@ -1047,6 +1048,8 @@
         });
         const container = list.parentElement;
         this._updateArrayControlsState(container, schema, basePath, arr.length);
+        // Attach listeners for newly created inputs
+        this._attachControlListeners(list);
       } else {
         const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return;
         if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
