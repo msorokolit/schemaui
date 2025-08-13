@@ -30,9 +30,7 @@
       // Internal controlled state
       this._data = {};
       this._initialData = {};
-      this._editableBindings = new Set();
-
-
+      
       // Event bus per instance
       this._bus = new Map();
 
@@ -226,8 +224,7 @@
 
     _render() {
       this.formEl.innerHTML = '';
-      // Reset editable bindings registry on full render
-      this._editableBindings = new Set();
+      // Reset
       const element = this.uiSchema ? this._renderUiElement(this.uiSchema, this.schema) : this._createControlBySchema('', this.schema, '', false);
       this.formEl.appendChild(element);
       // Hydrate values from current state if present
@@ -278,12 +275,11 @@
           input.classList.toggle('is-invalid', !input.checkValidity());
           this.validate();
         }
-        this._emit('field:change', { path: input.name, value: input.value });
-        this._emit('form:change', { data: this.getData() });
       });
       input.addEventListener('change', () => {
-        this._emit('field:change', { path: input.name, value: input.value });
-        this._emit('form:change', { data: this.getData() });
+        if (this.liveValidate) {
+          input.classList.toggle('is-invalid', !input.checkValidity());
+        }
       });
       return feedback;
     }
@@ -376,18 +372,7 @@
 
       let control;
 
-      const markPassiveIfDuplicate = (el) => {
-        if (!path) return;
-        if (this._editableBindings.has(path)) {
-          // Already has an editable control elsewhere; make this passive
-          el.dataset.passive = 'true';
-          if (el.tagName === 'SELECT') el.disabled = true;
-          else if (el.type === 'checkbox') el.disabled = true;
-          else el.readOnly = true;
-        } else {
-          this._editableBindings.add(path);
-        }
-      };
+      const markPassiveIfDuplicate = () => {};
 
       if (schema.enum) {
         control = document.createElement('select');
@@ -666,12 +651,10 @@
       // Initial body render based on state
       renderBody();
 
-      // Cross-renderer sync: re-render table when its array path changes
-      const prefix = `${scopePath}[`;
+      // Cross-renderer sync: only re-render table when the array itself changes (add/remove/reorder)
       this.on('field:change', ({ detail }) => {
         const p = detail && detail.path;
-        if (!p) return;
-        if (p === scopePath || p.startsWith(prefix)) renderBody();
+        if (p === scopePath) renderBody();
       });
 
       return container;
@@ -920,12 +903,10 @@
       listCol.appendChild(addBtn); listCol.appendChild(listGroup); wrapper.appendChild(listCol); wrapper.appendChild(detailCol);
       renderList(); renderDetail();
 
-      // Cross-renderer sync: re-render list/detail when its array path changes
-      const prefix = `${arrayPath}[`;
+      // Cross-renderer sync: only re-render list/detail when the array itself changes (add/remove/reorder)
       this.on('field:change', ({ detail }) => {
         const p = detail && detail.path;
-        if (!p) return;
-        if (p === arrayPath || p.startsWith(prefix)) {
+        if (p === arrayPath) {
           renderList();
           renderDetail();
         }
@@ -1283,8 +1264,7 @@
     _attachControlListeners(rootEl) {
       const inputs = rootEl.querySelectorAll('input,select,textarea');
       inputs.forEach((el) => {
-        if (el.dataset && el.dataset.passive === 'true') return;
-        if (el.closest('[data-passive-subtree="true"]')) return;
+
         el.addEventListener('blur', this._onInputValidate);
         el.addEventListener('input', () => {
           this._updateStateFromElement(el);
