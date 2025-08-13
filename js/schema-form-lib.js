@@ -27,6 +27,9 @@
       this.ajvInstance = null;
       this.ajvValidate = null;
 
+      // Internal controlled state
+      this._data = {};
+
       // Event bus per instance
       this._bus = new Map();
 
@@ -43,6 +46,10 @@
       this.uiSchema = uiSchema || null;
       this._render();
       await this._initAjv(this.schema);
+      // Initialize state from current DOM once
+      this._data = this._collectDataFromForm(this.schema) || {};
+      // Hydrate DOM values from state for consistency
+      this._setValuesByPath(this.formEl, this.schema, '', this._data);
       // Do not validate immediately to avoid showing errors on first render
       this._clearAllFieldErrors();
       this._emit('form:change', { data: this.getData() });
@@ -81,12 +88,14 @@
     clearRenderers() { this._renderers = [...globalRenderers]; }
 
     getData() {
-      return this._collectDataFromForm(this.schema) || {};
+      // Deep copy to avoid external mutation
+      return JSON.parse(JSON.stringify(this._data || {}));
     }
 
     setData(data) {
       if (!this.schema) return;
-      this._setValuesByPath(this.formEl, this.schema, '', data);
+      this._data = JSON.parse(JSON.stringify(data || {}));
+      this._setValuesByPath(this.formEl, this.schema, '', this._data);
       this._emit('form:change', { data: this.getData() });
       this.validate();
     }
@@ -105,6 +114,11 @@
     setValue(path, value) {
       const subSchema = this._findSchemaForPath(this.schema, path);
       const activeName = (this.formEl.contains(document.activeElement) && document.activeElement.name) ? document.activeElement.name : null;
+      // Update state first
+      const next = JSON.parse(JSON.stringify(this._data || {}));
+      this._setNestedValue(next, path, value);
+      this._data = next;
+      // Reflect state to DOM subtree
       this._setValuesByPath(this.formEl, subSchema, path, value);
       if (activeName) {
         const refocus = this.formEl.querySelector(`[name="${CSS.escape(activeName)}"]`);
@@ -130,7 +144,7 @@
 
     validate() {
       if (!this.schema) return { valid: false, errors: [{ message: 'No schema loaded' }] };
-      const data = this.getData();
+      const data = this._data || {};
       this._clearAllFieldErrors();
       // HTML5 validity pass (non-blocking UI feedback)
       const controls = this.formEl.querySelectorAll('input,select,textarea');
@@ -184,14 +198,20 @@
       this.formEl.innerHTML = '';
       const element = this.uiSchema ? this._renderUiElement(this.uiSchema, this.schema) : this._createControlBySchema('', this.schema, '', false);
       this.formEl.appendChild(element);
+      // Hydrate values from current state if present
+      if (this._data && this.schema) {
+        this._setValuesByPath(this.formEl, this.schema, '', this._data);
+      }
       this.formEl.querySelectorAll('input,select,textarea').forEach((el) => {
         el.addEventListener('blur', this._onInputValidate);
         el.addEventListener('input', () => {
-          // Lightweight: update rules and emit change without re-rendering
+          // Controlled: update state from element, then apply rules
+          this._updateStateFromElement(el);
           this._applyUiRules();
           this._emit('form:change', { data: this.getData() });
         });
         el.addEventListener('change', () => {
+          this._updateStateFromElement(el);
           this._emit('field:change', { path: el.name, value: el.value });
           this._emit('form:change', { data: this.getData() });
         });
@@ -1070,7 +1090,7 @@
     }
 
     _applyUiRules() {
-      const data = this.getData();
+      const data = this._data || {};
       this.formEl.querySelectorAll('[data-rule]').forEach((container) => { try { const rule = JSON.parse(container.dataset.rule); this._applyRuleToElement(container, rule, data); } catch (_) {} });
       (this._dynamicRules || []).forEach((rule) => {
         const targetPath = this._pointerToPath(rule.target || rule.condition?.scope || '');
@@ -1096,6 +1116,22 @@
       removeBtns.forEach((btn) => {
         btn.disabled = length <= (schema.minItems || 0);
       });
+    }
+
+    _updateStateFromElement(el) {
+      const name = el.name;
+      if (!name) return;
+      const subSchema = this._findSchemaForPath(this.schema, name);
+      let value;
+      if (el.type === 'checkbox') value = el.checked;
+      else if (el.tagName === 'SELECT') value = el.value === '' ? undefined : el.value;
+      else if (el.type === 'number' || el.type === 'range') value = el.value === '' ? undefined : el.value;
+      else if (el.type === 'file') return;
+      else value = el.value;
+      const coerced = this._coerceValue(subSchema, value);
+      const next = JSON.parse(JSON.stringify(this._data || {}));
+      if (coerced !== undefined) this._setNestedValue(next, name, coerced);
+      this._data = next;
     }
   }
 
