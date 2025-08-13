@@ -525,8 +525,8 @@
       const minItems = typeof schema.minItems === 'number' ? schema.minItems : 0;
       const maxItems = typeof schema.maxItems === 'number' ? schema.maxItems : Infinity;
 
-      const updateAddState = () => { addBtn.disabled = (this.getValue(path)?.length || 0) >= maxItems; };
-      const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = (this.getValue(path)?.length || 0) <= minItems; };
+      const updateAddState = () => { addBtn.disabled = list.children.length >= maxItems; };
+      const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = list.children.length <= minItems; };
 
       const addItem = (initialData) => {
         const current = this.getValue(path) || [];
