@@ -519,61 +519,10 @@
       const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = (this.getValue(path)?.length || 0) <= minItems; };
 
       const addItem = (initialData) => {
-        const index = list.children.length;
-        const itemWrapper = document.createElement('div');
-        itemWrapper.className = 'border rounded p-3 position-relative';
-
-        const btnGroup = document.createElement('div');
-        btnGroup.className = 'position-absolute d-flex gap-2';
-        btnGroup.style.top = '8px';
-        btnGroup.style.right = '8px';
-
-        const upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.className = 'btn btn-sm btn-outline-secondary'; upBtn.textContent = '↑';
-        const downBtn = document.createElement('button'); downBtn.type = 'button'; downBtn.className = 'btn btn-sm btn-outline-secondary'; downBtn.textContent = '↓';
-        const removeBtn = document.createElement('button'); removeBtn.type = 'button'; removeBtn.className = 'btn btn-sm btn-outline-danger btn-remove'; removeBtn.textContent = 'Remove';
-
-        btnGroup.appendChild(upBtn); btnGroup.appendChild(downBtn); btnGroup.appendChild(removeBtn);
-
-        const itemPath = `${path}[${index}]`;
-        const itemContent = this._createControlBySchema('', schema.items || {}, itemPath, false);
-
-        itemWrapper.appendChild(btnGroup);
-        itemWrapper.appendChild(itemContent);
-        list.appendChild(itemWrapper);
-
-        if (initialData !== undefined) this._setValuesByPath(itemWrapper, schema.items || {}, itemPath, initialData);
-
-        removeBtn.addEventListener('click', () => {
-          if (list.children.length <= minItems) return;
-          itemWrapper.remove();
-          this._renumberArrayItemNames(list, path);
-          Array.from(list.children).forEach(updateRemoveState);
-          updateAddState();
-          if (this.liveValidate) this.validate();
-          this._emit('form:change', { data: this.getData() });
-        });
-
-        upBtn.addEventListener('click', () => {
-          const current = this.getValue(path) || [];
-          const idxMatch = Array.from(list.children).indexOf(itemWrapper);
-          if (idxMatch > 0) {
-            const next = current.slice();
-            const tmp = next[idxMatch - 1]; next[idxMatch - 1] = next[idxMatch]; next[idxMatch] = tmp;
-            this.setValue(path, next);
-          }
-        });
-
-        downBtn.addEventListener('click', () => {
-          const current = this.getValue(path) || [];
-          const idxMatch = Array.from(list.children).indexOf(itemWrapper);
-          if (idxMatch >= 0 && idxMatch < list.children.length - 1) {
-            const next = current.slice();
-            const tmp = next[idxMatch + 1]; next[idxMatch + 1] = next[idxMatch]; next[idxMatch] = tmp;
-            this.setValue(path, next);
-          }
-        });
-
-        updateRemoveState(itemWrapper); updateAddState(); this._emit('form:change', { data: this.getData() });
+        const current = this.getValue(path) || [];
+        const next = current.slice();
+        next.push(initialData !== undefined ? initialData : (schema.items && schema.items.type === 'object' ? {} : undefined));
+        this.setValue(path, next);
       };
 
       addBtn.addEventListener('click', () => { addItem(); });
