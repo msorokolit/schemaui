@@ -31,6 +31,7 @@
       this._data = {};
       this._initialData = {};
       this._editableBindings = new Set();
+      this._arrayBindingPreference = options.arrayBindings || {}; // e.g., { 'workHistory': 'table' | 'list' }
 
       // Event bus per instance
       this._bus = new Map();
@@ -660,6 +661,14 @@
       });
 
       container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
+
+      // Editable or passive?
+      const isEditable = this._isArrayPathEditable(scopePath, 'table');
+      if (!isEditable) {
+        container.dataset.passiveSubtree = 'true';
+        addBtn.disabled = true;
+      }
+
       // Initial body render based on state
       renderBody();
 
@@ -706,11 +715,13 @@
           this.setValue(basePath, next);
           this._renderArrayTableBody(container, arraySchema, basePath);
         });
+        if (container.dataset.passiveSubtree === 'true') rm.disabled = true;
         tdAct.appendChild(rm); tr.appendChild(tdAct);
         tbody.appendChild(tr);
       });
       // Update controls state and attach listeners for newly created inputs
       this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
+      if (container.dataset.passiveSubtree === 'true') return;
       this._attachControlListeners(tbody);
     }
 
@@ -870,6 +881,12 @@
       const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary mb-2'; addBtn.textContent = 'Add item';
       let selectedIndex = 0;
 
+      const isEditable = this._isArrayPathEditable(arrayPath, 'list');
+      if (!isEditable) {
+        wrapper.dataset.passiveSubtree = 'true';
+        addBtn.disabled = true;
+      }
+
       const renderList = () => {
         listGroup.innerHTML = '';
         const arr = this.getValue(arrayPath) || [];
@@ -899,7 +916,7 @@
         // Hydrate detail from state so previously typed values persist
         this._setValuesByPath(detailCol, itemSchema, itemPath, arr[selectedIndex]);
         // Ensure inputs in detail update state
-        this._attachControlListeners(detailCol);
+        if (isEditable) this._attachControlListeners(detailCol);
       };
 
       addBtn.addEventListener('click', () => {
@@ -1279,6 +1296,7 @@
       const inputs = rootEl.querySelectorAll('input,select,textarea');
       inputs.forEach((el) => {
         if (el.dataset && el.dataset.passive === 'true') return;
+        if (el.closest('[data-passive-subtree="true"]')) return;
         el.addEventListener('blur', this._onInputValidate);
         el.addEventListener('input', () => {
           this._updateStateFromElement(el);
@@ -1312,6 +1330,22 @@
       }
       // primitives without default -> undefined to avoid forcing values
       return undefined;
+    }
+
+    _isArrayPathEditable(arrayPath, role) {
+      // role: 'table' | 'list'
+      const pref = this._arrayBindingPreference[arrayPath];
+      if (pref) return pref === role;
+      // Default: prefer 'table' editable if both appear; first claim sets pref
+      if (role === 'table') {
+        this._arrayBindingPreference[arrayPath] = 'table';
+        return true;
+      }
+      // If list arrives first and table not present, allow list
+      if (!this._arrayBindingPreference[arrayPath]) {
+        this._arrayBindingPreference[arrayPath] = 'list';
+      }
+      return this._arrayBindingPreference[arrayPath] === role;
     }
   }
 
