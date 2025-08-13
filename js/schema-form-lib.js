@@ -538,8 +538,14 @@
 
       addBtn.addEventListener('click', () => { addItem(); });
 
-      if (Array.isArray(schema.default)) schema.default.forEach((val) => addItem(val));
-      else if (minItems > 0) for (let i = 0; i < minItems; i++) addItem();
+      if (Array.isArray(schema.default)) {
+        schema.default.forEach((val, idx) => this._buildArrayItem(list, schema, path, idx, val));
+      } else if (minItems > 0) {
+        for (let i = 0; i < minItems; i++) {
+          this._buildArrayItem(list, schema, path, i, (schema.items && schema.items.type === 'object') ? {} : undefined);
+        }
+      }
+      updateAddState();
 
       return container;
     }
