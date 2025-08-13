@@ -658,6 +658,8 @@
           td.appendChild(ctrl);
           tr.appendChild(td);
         });
+        // Populate row inputs with current state values
+        this._setValuesByPath(tr, arraySchema.items || {}, `${basePath}[${rowIndex}]`, row);
         const tdAct = document.createElement('td');
         const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
         rm.addEventListener('click', () => {
