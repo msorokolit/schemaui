@@ -40,14 +40,20 @@
       "type": "Category",
       "label": "Work",
       "elements": [
-        { "type": "Control", "label": "Work History (List With Detail)", "scope": "#/properties/workHistory", "renderer": "ListWithDetail", "detail": {
-          "type": "Group", "label": "Job", "elements": [
-            { "type": "Control", "label": "Company", "scope": "#/properties/company" },
-            { "type": "Control", "label": "Role", "scope": "#/properties/role" },
-            { "type": "Control", "label": "Years", "scope": "#/properties/years" }
-          ]
-        }},
         { "type": "Control", "label": "Work History (Table)", "scope": "#/properties/workHistory", "renderer": "Table" }
+      ]
+    },
+    {
+      "type": "Category",
+      "label": "Projects",
+      "elements": [
+        { "type": "Control", "label": "Projects (List With Detail)", "scope": "#/properties/projects", "renderer": "ListWithDetail", "detail": {
+          "type": "Group", "label": "Project", "elements": [
+            { "type": "Control", "label": "Name", "scope": "#/properties/name" },
+            { "type": "Control", "label": "Description", "scope": "#/properties/description", "options": { "widget": "textarea" } },
+            { "type": "Control", "label": "Duration (months)", "scope": "#/properties/duration" }
+          ]
+        }}
       ]
     }
   ]

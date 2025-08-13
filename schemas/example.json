@@ -22,6 +22,21 @@
       "type": "array", "title": "Work History",
       "items": { "type": "object", "required": ["company", "years"], "properties": { "company": { "type": "string", "title": "Company" }, "role": { "type": "string", "title": "Role" }, "years": { "type": "number", "title": "Years", "minimum": 0 } } },
       "minItems": 0
+    },
+    "projects": {
+      "type": "array",
+      "title": "Projects",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "title": "Name" },
+          "description": { "type": "string", "title": "Description" },
+          "duration": { "type": "number", "title": "Duration (months)", "minimum": 0 }
+        }
+      },
+      "minItems": 0,
+      "default": []
     }
   },
   "oneOf": [
