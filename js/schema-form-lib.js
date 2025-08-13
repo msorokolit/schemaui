@@ -918,7 +918,8 @@
       if (!element || typeof element !== 'object') return document.createElement('div');
       switch (element.type) {
         case 'Control': {
-          const path = `${basePath}${basePath ? '.' : ''}${this._pointerToPath(element.scope || '')}`;
+          const rel = this._pointerToPath(element.scope || '');
+          const path = rel ? (basePath ? `${basePath}.${rel}` : rel) : basePath;
           const subSchema = this._findSchemaForPath(schema, path);
           const name = element.label || (path.split('.').slice(-1)[0] || '');
           const required = this._isPathRequired(schema, path);
@@ -943,6 +944,21 @@
           const el = this._createControlBySchema(name, effective, path, required);
           return el;
         }
+        case 'Group': {
+          const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3';
+          if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); }
+          (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, basePath)));
+          return fs;
+        }
+        case 'VerticalLayout': {
+          const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElementWithBase(el, schema, basePath))); return c;
+        }
+        case 'HorizontalLayout': {
+          const row = document.createElement('div'); row.className = 'row g-3';
+          const children = element.elements || [];
+          children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, basePath)); row.appendChild(col); });
+          return row;
+        }
         default: return this._renderUiElement(element, schema);
       }
     }
@@ -964,17 +980,17 @@
 
       let rendered;
       switch (element.type) {
-        case 'VerticalLayout': { const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElement(el, schema))); rendered = c; break; }
+        case 'VerticalLayout': { const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElementWithBase(el, schema, ''))); rendered = c; break; }
         case 'HorizontalLayout': {
           const row = document.createElement('div'); row.className = 'row g-3';
           const children = element.elements || [];
-          children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElement(el, schema)); row.appendChild(col); });
+          children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, '')); row.appendChild(col); });
           rendered = row; break;
         }
         case 'Group': {
           const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3';
           if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); }
-          (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElement(el, schema)));
+          (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, '')));
           rendered = fs; break;
         }
         case 'Control': {
