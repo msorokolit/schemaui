@@ -637,6 +637,15 @@
       container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
       // Initial body render based on state
       renderBody();
+
+      // Cross-renderer sync: re-render table when its array path changes
+      const prefix = `${scopePath}[`;
+      this.on('field:change', ({ detail }) => {
+        const p = detail && detail.path;
+        if (!p) return;
+        if (p === scopePath || p.startsWith(prefix)) renderBody();
+      });
+
       return container;
     }
 
@@ -850,6 +859,9 @@
         detailCol.innerHTML = '';
         const arr = this.getValue(arrayPath) || [];
         if (arr.length === 0) return;
+        // Clamp selected index within bounds
+        if (selectedIndex < 0) selectedIndex = 0;
+        if (selectedIndex > arr.length - 1) selectedIndex = arr.length - 1;
         const itemPath = `${arrayPath}[${selectedIndex}]`;
         const itemSchema = arraySchema.items || {};
         if (element.detail) {
@@ -877,6 +889,18 @@
 
       listCol.appendChild(addBtn); listCol.appendChild(listGroup); wrapper.appendChild(listCol); wrapper.appendChild(detailCol);
       renderList(); renderDetail();
+
+      // Cross-renderer sync: re-render list/detail when its array path changes
+      const prefix = `${arrayPath}[`;
+      this.on('field:change', ({ detail }) => {
+        const p = detail && detail.path;
+        if (!p) return;
+        if (p === arrayPath || p.startsWith(prefix)) {
+          renderList();
+          renderDetail();
+        }
+      });
+
       return wrapper;
     }
 
