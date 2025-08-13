@@ -1,60 +1,71 @@
 {
-  "type": "Categorization",
-  "elements": [
-    {
-      "type": "Category",
-      "label": "Profile",
-      "elements": [
-        { "type": "Group", "label": "Identity", "elements": [
-          { "type": "HorizontalLayout", "elements": [
-            { "type": "Control", "label": "Full Name", "scope": "#/properties/name" },
-            { "type": "Control", "label": "Email", "scope": "#/properties/email" }
-          ]},
-          { "type": "Control", "label": "Age", "scope": "#/properties/age", "options": { "widget": "range" } },
-          { "type": "Control", "label": "Website", "scope": "#/properties/website", "options": { "placeholder": "https://example.com" } }
-        ]},
-        { "type": "Group", "label": "Preferences", "elements": [
-          { "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
-          { "type": "Group", "label": "Preference Details", "rule": { "effect": "HIDE", "condition": { "scope": "#/properties/newsletter", "equals": false } }, "elements": [
-            { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
-            { "type": "Control", "label": "Accent Color", "scope": "#/properties/accentColor" },
-            { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
-          ]}
-        ]}
-      ]
-    },
-    {
-      "type": "Category",
-      "label": "Address",
-      "elements": [
-        { "type": "Group", "label": "Address", "elements": [
-          { "type": "HorizontalLayout", "elements": [
-            { "type": "Control", "label": "Street", "scope": "#/properties/address/properties/street" },
-            { "type": "Control", "label": "City", "scope": "#/properties/address/properties/city" },
-            { "type": "Control", "label": "ZIP", "scope": "#/properties/address/properties/zip" }
-          ]}
-        ]}
-      ]
-    },
-    {
-      "type": "Category",
-      "label": "Work",
-      "elements": [
-        { "type": "Control", "label": "Work History (Table)", "scope": "#/properties/workHistory", "renderer": "Table" }
-      ]
-    },
-    {
-      "type": "Category",
-      "label": "Projects",
-      "elements": [
-        { "type": "Control", "label": "Projects (List With Detail)", "scope": "#/properties/projects", "renderer": "ListWithDetail", "detail": {
-          "type": "Group", "label": "Project", "elements": [
-            { "type": "Control", "label": "Name", "scope": "#/properties/name" },
-            { "type": "Control", "label": "Description", "scope": "#/properties/description", "options": { "widget": "textarea" } },
-            { "type": "Control", "label": "Duration (months)", "scope": "#/properties/duration" }
-          ]
-        }}
-      ]
-    }
-  ]
+	"type": "Categorization",
+	"elements": [
+		{
+			"type": "Category",
+			"label": "Profile",
+			"elements": [
+				{ "type": "Group", "label": "Identity", "elements": [
+					{ "type": "HorizontalLayout", "elements": [
+						{ "type": "Control", "label": "Full Name", "scope": "#/properties/name" },
+						{ "type": "Control", "label": "Email", "scope": "#/properties/email" }
+					]},
+					{ "type": "Control", "label": "Age", "scope": "#/properties/age", "options": { "widget": "range" } },
+					{ "type": "Control", "label": "Website", "scope": "#/properties/website", "options": { "placeholder": "https://example.com" } }
+				]},
+				{ "type": "Group", "label": "Preferences", "elements": [
+					{ "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
+					{ "type": "Group", "label": "Preference Details", "rule": { "effect": "HIDE", "condition": { "scope": "#/properties/newsletter", "equals": false } }, "elements": [
+						{ "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
+						{ "type": "Control", "label": "Accent Color", "scope": "#/properties/accentColor" },
+						{ "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
+					]}
+				]},
+				{ "type": "Group", "label": "Contact", "elements": [
+					{ "type": "Control", "label": "Phone", "scope": "#/properties/contact/properties/phone" },
+					{ "type": "HorizontalLayout", "elements": [
+						{ "type": "Control", "label": "Twitter", "scope": "#/properties/contact/properties/social/properties/twitter" },
+						{ "type": "Control", "label": "LinkedIn", "scope": "#/properties/contact/properties/social/properties/linkedin" }
+					]}
+				]}
+			]
+		},
+		{
+			"type": "Category",
+			"label": "Address",
+			"elements": [
+				{ "type": "Group", "label": "Address", "elements": [
+					{ "type": "HorizontalLayout", "elements": [
+						{ "type": "Control", "label": "Street", "scope": "#/properties/address/properties/street" },
+						{ "type": "Control", "label": "City", "scope": "#/properties/address/properties/city" },
+						{ "type": "Control", "label": "ZIP", "scope": "#/properties/address/properties/zip" }
+					]}
+				]}
+			]
+		},
+		{
+			"type": "Category",
+			"label": "Work",
+			"elements": [
+				{ "type": "Control", "label": "Work History (Table)", "scope": "#/properties/workHistory", "renderer": "Table" }
+			]
+		},
+		{
+			"type": "Category",
+			"label": "Projects",
+			"elements": [
+				{ "type": "Control", "label": "Projects (List With Detail)", "scope": "#/properties/projects", "renderer": "ListWithDetail", "detail": {
+					"type": "Group", "label": "Project", "elements": [
+						{ "type": "Control", "label": "Name", "scope": "#/properties/name" },
+						{ "type": "Control", "label": "Description", "scope": "#/properties/description", "options": { "widget": "textarea" } },
+						{ "type": "Control", "label": "Duration (months)", "scope": "#/properties/duration" },
+						{ "type": "Group", "label": "Links", "elements": [
+							{ "type": "Control", "label": "GitHub", "scope": "#/properties/links/properties/github" },
+							{ "type": "Control", "label": "Demo", "scope": "#/properties/links/properties/demo" }
+						]}
+					]
+				}}
+			]
+		}
+	]
 }

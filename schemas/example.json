@@ -18,9 +18,37 @@
       "type": "object", "title": "Address", "required": ["street", "city"],
       "properties": { "street": { "type": "string", "title": "Street" }, "city": { "type": "string", "title": "City" }, "zip": { "type": "string", "title": "ZIP", "pattern": "^[0-9]{5}$" } }
     },
+    "contact": {
+      "type": "object", "title": "Contact",
+      "properties": {
+        "phone": { "type": "string", "title": "Phone" },
+        "social": {
+          "type": "object", "title": "Social",
+          "properties": {
+            "twitter": { "type": "string", "title": "Twitter" },
+            "linkedin": { "type": "string", "title": "LinkedIn" }
+          }
+        }
+      }
+    },
     "workHistory": {
       "type": "array", "title": "Work History",
-      "items": { "type": "object", "required": ["company", "years"], "properties": { "company": { "type": "string", "title": "Company" }, "role": { "type": "string", "title": "Role" }, "years": { "type": "number", "title": "Years", "minimum": 0 } } },
+      "items": {
+        "type": "object",
+        "required": ["company", "years"],
+        "properties": {
+          "company": { "type": "string", "title": "Company" },
+          "role": { "type": "string", "title": "Role" },
+          "years": { "type": "number", "title": "Years", "minimum": 0 },
+          "period": {
+            "type": "object", "title": "Period",
+            "properties": {
+              "from": { "type": "string", "format": "date", "title": "From" },
+              "to": { "type": "string", "format": "date", "title": "To" }
+            }
+          }
+        }
+      },
       "minItems": 0
     },
     "projects": {
@@ -32,7 +60,14 @@
         "properties": {
           "name": { "type": "string", "title": "Name" },
           "description": { "type": "string", "title": "Description" },
-          "duration": { "type": "number", "title": "Duration (months)", "minimum": 0 }
+          "duration": { "type": "number", "title": "Duration (months)", "minimum": 0 },
+          "links": {
+            "type": "object", "title": "Links",
+            "properties": {
+              "github": { "type": "string", "format": "url", "title": "GitHub" },
+              "demo": { "type": "string", "format": "url", "title": "Demo" }
+            }
+          }
         }
       },
       "minItems": 0,

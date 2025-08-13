@@ -675,7 +675,7 @@
         cols.forEach((c) => {
           const td = document.createElement('td');
           const cellPath = `${basePath}[${rowIndex}].${c}`;
-          const ctrl = this._createInputControl('', properties[c], cellPath, false);
+          const ctrl = this._createControlBySchema('', properties[c], cellPath, false);
           td.appendChild(ctrl);
           tr.appendChild(td);
         });
