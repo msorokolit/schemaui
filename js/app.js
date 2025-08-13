@@ -74,8 +74,8 @@
     outputPre.textContent = '';
   });
 
-  resetFormBtn.addEventListener('click', () => { form.regenerate(); outputPre.textContent = ''; });
-  clearFormBtn.addEventListener('click', () => { form.setData({}); outputPre.textContent = ''; });
+  resetFormBtn.addEventListener('click', () => { form.reset(); outputPre.textContent = ''; });
+  clearFormBtn.addEventListener('click', () => { form.clear(); outputPre.textContent = ''; });
 
   submitBtn.addEventListener('click', () => {
     const { valid } = form.validate();

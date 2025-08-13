@@ -54,6 +54,8 @@
       this._setValuesByPath(this.formEl, this.schema, '', this._data);
       // Do not validate immediately to avoid showing errors on first render
       this._clearAllFieldErrors();
+      // Apply rules once after load so conditional UI is correct
+      this._applyUiRules();
       this._emit('form:change', { data: this.getData() });
     }
 
@@ -175,6 +177,7 @@
       controls.forEach((el) => {
         if (!el.checkValidity()) {
           htmlValid = false;
+          // Only mark invalid during submit/explicit validate; do not move focus
           el.classList.add('is-invalid');
         }
       });
