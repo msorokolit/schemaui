@@ -530,6 +530,7 @@
 
       const addItem = (initialData) => {
         const current = this.getValue(path) || [];
+        if (current.length >= maxItems) return;
         const next = current.slice();
         next.push(initialData !== undefined ? initialData : (schema.items && schema.items.type === 'object' ? {} : undefined));
         this.setValue(path, next);
@@ -609,12 +610,13 @@
 
       if (initialData !== undefined) this._setValuesByPath(itemWrapper, arraySchema.items || {}, itemPath, initialData);
 
-      removeBtn.addEventListener('click', () => {
-        const current = this.getValue(basePath) || [];
-        const next = current.slice();
-        next.splice(index, 1);
-        this.setValue(basePath, next);
-      });
+              removeBtn.addEventListener('click', () => {
+          const current = this.getValue(basePath) || [];
+          if (current.length <= (arraySchema.minItems || 0)) return;
+          const next = current.slice();
+          next.splice(index, 1);
+          this.setValue(basePath, next);
+        });
 
       upBtn.addEventListener('click', () => {
         const current = this.getValue(basePath) || [];
@@ -627,7 +629,7 @@
 
       downBtn.addEventListener('click', () => {
         const current = this.getValue(basePath) || [];
-        if (index < (list.children.length - 1)) {
+        if (index < current.length - 1) {
           const next = current.slice();
           const tmp = next[index + 1]; next[index + 1] = next[index]; next[index] = tmp;
           this.setValue(basePath, next);
