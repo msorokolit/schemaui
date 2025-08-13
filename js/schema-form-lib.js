@@ -145,8 +145,7 @@
       this._data = next;
       // Reflect state to DOM subtree
       this._setValuesByPath(this.formEl, subSchema, path, value);
-      // Sync all controls bound to the same path across the form
-      this._syncBoundControls(path, this._getValueByPath(path));
+
       if (activeName) {
         const refocus = this.formEl.querySelector(`[name="${CSS.escape(activeName)}"]`);
         if (refocus) refocus.focus();
@@ -1230,17 +1229,7 @@
       return node;
     }
 
-    _syncBoundControls(name, value, originEl) {
-      const els = this.formEl.querySelectorAll(`[name="${CSS.escape(name)}"]`);
-      els.forEach((el) => {
-        if (originEl && el === originEl) return;
-        if (el.type === 'checkbox') {
-          el.checked = Boolean(value);
-        } else {
-          el.value = value == null ? '' : String(value);
-        }
-      });
-    }
+
 
     _updateStateFromElement(el) {
       const name = el.name;
@@ -1256,9 +1245,7 @@
       const next = JSON.parse(JSON.stringify(this._data || {}));
       if (coerced !== undefined) this._setNestedValue(next, name, coerced);
       this._data = next;
-      // Keep duplicate-bound controls in sync with state
-      const currentVal = this._getValueByPath(name);
-      this._syncBoundControls(name, currentVal, el);
+
     }
 
     _attachControlListeners(rootEl) {
