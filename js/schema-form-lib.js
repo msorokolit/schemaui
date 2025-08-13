@@ -549,13 +549,23 @@
         });
 
         upBtn.addEventListener('click', () => {
-          const prev = itemWrapper.previousElementSibling;
-          if (prev) { list.insertBefore(itemWrapper, prev); this._renumberArrayItemNames(list, path); if (this.liveValidate) this.validate(); this._emit('form:change', { data: this.getData() }); }
+          const current = this.getValue(path) || [];
+          const idxMatch = Array.from(list.children).indexOf(itemWrapper);
+          if (idxMatch > 0) {
+            const next = current.slice();
+            const tmp = next[idxMatch - 1]; next[idxMatch - 1] = next[idxMatch]; next[idxMatch] = tmp;
+            this.setValue(path, next);
+          }
         });
 
         downBtn.addEventListener('click', () => {
-          const next = itemWrapper.nextElementSibling;
-          if (next) { list.insertBefore(next, itemWrapper); this._renumberArrayItemNames(list, path); if (this.liveValidate) this.validate(); this._emit('form:change', { data: this.getData() }); }
+          const current = this.getValue(path) || [];
+          const idxMatch = Array.from(list.children).indexOf(itemWrapper);
+          if (idxMatch >= 0 && idxMatch < list.children.length - 1) {
+            const next = current.slice();
+            const tmp = next[idxMatch + 1]; next[idxMatch + 1] = next[idxMatch]; next[idxMatch] = tmp;
+            this.setValue(path, next);
+          }
         });
 
         updateRemoveState(itemWrapper); updateAddState(); this._emit('form:change', { data: this.getData() });
@@ -729,10 +739,11 @@
       };
 
       addBtn.addEventListener('click', () => {
-        const arrContainer = this._createArrayGroup('', arraySchema, arrayPath, false);
-        const addBtnInner = arrContainer.querySelector('button.btn-outline-primary');
-        if (addBtnInner) addBtnInner.click();
-        renderList(); renderDetail(); this._emit('form:change', { data: this.getData() });
+        const current = this.getValue(arrayPath) || [];
+        const next = current.slice();
+        next.push({});
+        this.setValue(arrayPath, next);
+        renderList(); renderDetail();
       });
 
       listCol.appendChild(addBtn); listCol.appendChild(listGroup); wrapper.appendChild(listCol); wrapper.appendChild(detailCol);
@@ -977,8 +988,8 @@
     _applyRuleToElement(el, rule, data) {
       const pass = this._evaluateCondition(rule.condition, data);
       const effect = rule.effect || 'HIDE';
-      if (effect === 'HIDE') el.classList.toggle('d-none', !pass);
-      else if (effect === 'DISABLE') el.querySelectorAll('input,select,textarea,button').forEach((inp) => inp.disabled = !pass);
+      if (effect === 'HIDE') el.classList.toggle('d-none', pass);
+      else if (effect === 'DISABLE') el.querySelectorAll('input,select,textarea,button').forEach((inp) => inp.disabled = pass);
     }
 
     _applyUiRules() {

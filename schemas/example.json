@@ -6,67 +6,26 @@
   "type": "object",
   "required": ["name", "age", "email"],
   "properties": {
-    "name": {
-      "type": "string",
-      "title": "Full Name",
-      "minLength": 2,
-      "description": "Your full legal name"
-    },
-    "email": {
-      "type": "string",
-      "format": "email",
-      "title": "Email Address"
-    },
-    "age": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 130,
-      "title": "Age"
-    },
-    "website": {
-      "type": "string",
-      "format": "url",
-      "title": "Personal Website",
-      "description": "Optional"
-    },
-    "newsletter": {
-      "type": "boolean",
-      "title": "Subscribe to newsletter",
-      "default": true
-    },
-    "favoriteColor": {
-      "type": "string",
-      "title": "Favorite Color",
-      "enum": ["red", "green", "blue", "yellow", "purple"]
-    },
-    "tags": {
-      "type": "array",
-      "title": "Tags",
-      "items": { "type": "string" },
-      "default": ["engineer", "gamer"]
-    },
+    "name": { "type": "string", "title": "Full Name", "minLength": 2, "description": "Your full legal name" },
+    "email": { "type": "string", "format": "email", "title": "Email Address" },
+    "age": { "type": "integer", "minimum": 0, "maximum": 130, "title": "Age" },
+    "website": { "type": "string", "format": "url", "title": "Personal Website", "description": "Optional" },
+    "newsletter": { "type": "boolean", "title": "Subscribe to newsletter", "default": true },
+    "favoriteColor": { "type": "string", "title": "Favorite Color", "enum": ["red", "green", "blue", "yellow", "purple"] },
+    "accentColor": { "type": "string", "format": "color", "title": "Accent Color" },
+    "tags": { "type": "array", "title": "Tags", "items": { "type": "string" }, "default": ["engineer", "gamer"] },
     "address": {
-      "type": "object",
-      "title": "Address",
-      "required": ["street", "city"],
-      "properties": {
-        "street": { "type": "string", "title": "Street" },
-        "city": { "type": "string", "title": "City" },
-        "zip": { "type": "string", "title": "ZIP", "pattern": "^[0-9]{5}$" }
-      }
+      "type": "object", "title": "Address", "required": ["street", "city"],
+      "properties": { "street": { "type": "string", "title": "Street" }, "city": { "type": "string", "title": "City" }, "zip": { "type": "string", "title": "ZIP", "pattern": "^[0-9]{5}$" } }
     },
     "workHistory": {
-      "type": "array",
-      "title": "Work History",
-      "items": {
-        "type": "object",
-        "required": ["company", "years"],
-        "properties": {
-          "company": { "type": "string", "title": "Company" },
-          "role": { "type": "string", "title": "Role" },
-          "years": { "type": "number", "title": "Years", "minimum": 0 }
-        }
-      }
+      "type": "array", "title": "Work History",
+      "items": { "type": "object", "required": ["company", "years"], "properties": { "company": { "type": "string", "title": "Company" }, "role": { "type": "string", "title": "Role" }, "years": { "type": "number", "title": "Years", "minimum": 0 } } },
+      "minItems": 0
     }
-  }
+  },
+  "oneOf": [
+    { "properties": { "age": { "minimum": 0, "maximum": 17 } }, "title": "Minor" },
+    { "properties": { "age": { "minimum": 18 } }, "title": "Adult" }
+  ]
 }
