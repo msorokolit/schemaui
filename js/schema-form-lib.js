@@ -169,14 +169,24 @@
       this.formEl.appendChild(element);
       this.formEl.querySelectorAll('input,select,textarea').forEach((el) => {
         el.addEventListener('blur', this._onInputValidate);
-        el.addEventListener('input', () => { this._applyUiRules(); this._emit('form:change', { data: this.getData() }); });
-        el.addEventListener('change', () => { this._emit('field:change', { path: el.name, value: el.value }); this._emit('form:change', { data: this.getData() }); });
+        el.addEventListener('input', () => {
+          // Lightweight: update rules and emit change without re-rendering
+          this._applyUiRules();
+          this._emit('form:change', { data: this.getData() });
+        });
+        el.addEventListener('change', () => {
+          this._emit('field:change', { path: el.name, value: el.value });
+          this._emit('form:change', { data: this.getData() });
+        });
       });
     }
 
     _onInputValidate(e) {
-      if (this.liveValidate) e.target.classList.toggle('is-invalid', !e.target.checkValidity());
-      if (this.liveValidate) this.validate();
+      if (this.liveValidate) {
+        // Only mark the blurred field invalid to avoid jumping focus globally
+        e.target.classList.toggle('is-invalid', !e.target.checkValidity());
+        this.validate();
+      }
     }
 
     async _initAjv(schema) {
@@ -892,7 +902,7 @@
 
     _collectDataFromForm(schema) {
       const formData = {};
-      if (!this.formEl.checkValidity()) this.formEl.reportValidity();
+      // Do not call reportValidity here to avoid focus jumps during typing
       const allControls = this.formEl.querySelectorAll('[name]');
       allControls.forEach((el) => {
         const name = el.name; if (!name) return;
