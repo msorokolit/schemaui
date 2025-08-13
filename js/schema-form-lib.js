@@ -128,19 +128,35 @@
     clearRules() { this._dynamicRules = []; this._applyUiRules(); }
 
     validate() {
-      if (!this.ajvValidate || !this.schema) return { valid: true, errors: [] };
+      if (!this.schema) return { valid: false, errors: [{ message: 'No schema loaded' }] };
       const data = this.getData();
       this._clearAllFieldErrors();
-      const valid = this.ajvValidate(data);
-      if (!valid && Array.isArray(this.ajvValidate.errors)) {
-        this.ajvValidate.errors.forEach((err) => {
-          const name = this._namePathFromAjvError(err);
-          this._setFieldError(name, err);
-        });
+      // HTML5 validity pass (non-blocking UI feedback)
+      const controls = this.formEl.querySelectorAll('input,select,textarea');
+      let htmlValid = true;
+      controls.forEach((el) => {
+        if (!el.checkValidity()) {
+          htmlValid = false;
+          el.classList.add('is-invalid');
+        }
+      });
+      // AJV validity pass
+      let ajvValid = true;
+      let ajvErrors = [];
+      if (this.ajvValidate) {
+        ajvValid = this.ajvValidate(data);
+        if (!ajvValid && Array.isArray(this.ajvValidate.errors)) {
+          ajvErrors = this.ajvValidate.errors;
+          ajvErrors.forEach((err) => {
+            const name = this._namePathFromAjvError(err);
+            this._setFieldError(name, err);
+          });
+        }
       }
+      const overall = htmlValid && ajvValid;
       this._applyUiRules();
-      this._emit('form:validate', { valid, errors: this.ajvValidate.errors || [] });
-      return { valid, errors: this.ajvValidate.errors || [] };
+      this._emit('form:validate', { valid: overall, errors: ajvErrors });
+      return { valid: overall, errors: ajvErrors };
     }
 
     // Private internals
