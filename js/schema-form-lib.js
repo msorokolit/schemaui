@@ -134,8 +134,8 @@
       const valid = this.ajvValidate(data);
       if (!valid && Array.isArray(this.ajvValidate.errors)) {
         this.ajvValidate.errors.forEach((err) => {
-          const name = this._ajvInstancePathToNamePath(err.instancePath || '');
-          if (name) this._setFieldError(name, err);
+          const name = this._namePathFromAjvError(err);
+          this._setFieldError(name, err);
         });
       }
       this._applyUiRules();
@@ -938,6 +938,10 @@
         arr.forEach((itemVal, idx) => {
           this._buildArrayItem(list, schema, basePath, idx, itemVal);
         });
+        // reflect maxItems on Add button state
+        const container = list.parentElement;
+        const addBtn = container && container.querySelector('.btn-outline-primary');
+        if (addBtn) addBtn.disabled = arr.length >= (schema.maxItems || Infinity);
       } else {
         const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return;
         if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
@@ -960,7 +964,31 @@
       return name;
     }
 
-    _clearAllFieldErrors() { this.formEl.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid')); this.formEl.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; }); }
+    _clearAllFieldErrors() {
+      this.formEl.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+      this.formEl.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; });
+      this.formEl.querySelectorAll('.sf-array-error').forEach((el) => el.remove());
+    }
+
+    _setContainerError(path, message) {
+      const container = this._findContainerByPath(path);
+      if (!container) return;
+      let msg = container.querySelector('.sf-array-error');
+      if (!msg) {
+        msg = document.createElement('div');
+        msg.className = 'sf-array-error text-danger small mt-1';
+        container.appendChild(msg);
+      }
+      msg.textContent = message || 'Invalid value';
+    }
+
+    _namePathFromAjvError(err) {
+      const base = this._ajvInstancePathToNamePath(err.instancePath || '');
+      if (err.keyword === 'required' && err.params && err.params.missingProperty) {
+        return base ? `${base}.${err.params.missingProperty}` : String(err.params.missingProperty);
+      }
+      return base;
+    }
 
     _getLocaleMessage(err) {
       const loc = this.locale || 'en';
@@ -978,11 +1006,15 @@
     _setFieldError(namePath, messageOrErr) {
       if (!namePath) return;
       const el = this.formEl.querySelector(`[name="${CSS.escape(namePath)}"]`);
-      if (!el) return;
-      el.classList.add('is-invalid');
-      const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback');
-      const message = typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr);
-      if (feedback) feedback.textContent = message || 'Invalid value';
+      if (el) {
+        el.classList.add('is-invalid');
+        const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback');
+        const message = typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr);
+        if (feedback) feedback.textContent = message || 'Invalid value';
+        return;
+      }
+      // Fallback: container-level error (arrays/objects)
+      this._setContainerError(namePath, typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr));
     }
 
     // Rules
