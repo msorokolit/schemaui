@@ -663,12 +663,6 @@
       container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
 
       // Editable or passive?
-      const isEditable = this._isArrayPathEditable(scopePath, 'table');
-      if (!isEditable) {
-        container.dataset.passiveSubtree = 'true';
-        addBtn.disabled = true;
-      }
-
       // Initial body render based on state
       renderBody();
 
@@ -715,14 +709,12 @@
           this.setValue(basePath, next);
           this._renderArrayTableBody(container, arraySchema, basePath);
         });
-        if (container.dataset.passiveSubtree === 'true') rm.disabled = true;
-        tdAct.appendChild(rm); tr.appendChild(tdAct);
-        tbody.appendChild(tr);
-      });
-      // Update controls state and attach listeners for newly created inputs
-      this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
-      if (container.dataset.passiveSubtree === 'true') return;
-      this._attachControlListeners(tbody);
+              tdAct.appendChild(rm); tr.appendChild(tdAct);
+      tbody.appendChild(tr);
+    });
+    // Update controls state and attach listeners for newly created inputs
+    this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
+    this._attachControlListeners(tbody);
     }
 
     _focusFirstInputInItem(basePath, index) {
@@ -881,11 +873,7 @@
       const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary mb-2'; addBtn.textContent = 'Add item';
       let selectedIndex = 0;
 
-      const isEditable = this._isArrayPathEditable(arrayPath, 'list');
-      if (!isEditable) {
-        wrapper.dataset.passiveSubtree = 'true';
-        addBtn.disabled = true;
-      }
+
 
       const renderList = () => {
         listGroup.innerHTML = '';
@@ -916,7 +904,7 @@
         // Hydrate detail from state so previously typed values persist
         this._setValuesByPath(detailCol, itemSchema, itemPath, arr[selectedIndex]);
         // Ensure inputs in detail update state
-        if (isEditable) this._attachControlListeners(detailCol);
+        this._attachControlListeners(detailCol);
       };
 
       addBtn.addEventListener('click', () => {
@@ -1332,15 +1320,7 @@
       return undefined;
     }
 
-    _isArrayPathEditable(arrayPath, role) {
-      // Systematic rule: the first renderer that claims a path becomes the editor; others become passive previews.
-      if (!this._editableArrayPaths) this._editableArrayPaths = new Map();
-      if (!this._editableArrayPaths.has(arrayPath)) {
-        this._editableArrayPaths.set(arrayPath, role);
-        return true;
-      }
-      return this._editableArrayPaths.get(arrayPath) === role;
-    }
+
   }
 
   function create(rootEl, options) { return new SchemaForm(rootEl, options); }
