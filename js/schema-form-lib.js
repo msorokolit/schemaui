@@ -1182,6 +1182,29 @@
       });
     }
 
+    _getValueByPath(path) {
+      const tokens = this._tokenizePath(path);
+      let node = this._data;
+      for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (node == null) return undefined;
+        node = typeof t === 'number' ? (Array.isArray(node) ? node[t] : undefined) : node[t];
+      }
+      return node;
+    }
+
+    _syncBoundControls(name, value, originEl) {
+      const els = this.formEl.querySelectorAll(`[name="${CSS.escape(name)}"]`);
+      els.forEach((el) => {
+        if (originEl && el === originEl) return;
+        if (el.type === 'checkbox') {
+          el.checked = Boolean(value);
+        } else {
+          el.value = value == null ? '' : String(value);
+        }
+      });
+    }
+
     _updateStateFromElement(el) {
       const name = el.name;
       if (!name) return;
@@ -1196,6 +1219,9 @@
       const next = JSON.parse(JSON.stringify(this._data || {}));
       if (coerced !== undefined) this._setNestedValue(next, name, coerced);
       this._data = next;
+      // Keep duplicate-bound controls in sync with state
+      const currentVal = this._getValueByPath(name);
+      this._syncBoundControls(name, currentVal, el);
     }
 
     _attachControlListeners(rootEl) {
