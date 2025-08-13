@@ -103,13 +103,20 @@
     }
 
     reset() {
-      this.setData(this._initialData, { skipValidate: true });
+      // Restore initial state and fully re-render
+      this._data = JSON.parse(JSON.stringify(this._initialData || {}));
+      this._render();
       this._clearAllFieldErrors();
+      this._emit('form:change', { data: this.getData() });
     }
 
     clear() {
-      this.setData({}, { skipValidate: true });
+      // Compute defaults from schema and fully re-render
+      const defaults = this._computeDefaults(this.schema);
+      this._data = defaults || {};
+      this._render();
       this._clearAllFieldErrors();
+      this._emit('form:change', { data: this.getData() });
     }
 
     clearValidation() {
@@ -1189,6 +1196,27 @@
           this._emit('form:change', { data: this.getData() });
         });
       });
+    }
+
+    _computeDefaults(schema) {
+      if (!schema || typeof schema !== 'object') return undefined;
+      if (schema.default !== undefined) return JSON.parse(JSON.stringify(schema.default));
+      const type = schema.type;
+      if (type === 'object' || (schema.properties && !type)) {
+        const result = {};
+        const props = schema.properties || {};
+        Object.keys(props).forEach((key) => {
+          const d = this._computeDefaults(props[key]);
+          if (d !== undefined) result[key] = d;
+        });
+        return Object.keys(result).length > 0 ? result : {};
+      }
+      if (type === 'array') {
+        if (Array.isArray(schema.default)) return JSON.parse(JSON.stringify(schema.default));
+        return [];
+      }
+      // primitives without default -> undefined to avoid forcing values
+      return undefined;
     }
   }
 
