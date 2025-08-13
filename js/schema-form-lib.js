@@ -43,7 +43,9 @@
 
     // Public API
     async load(schema, uiSchema) {
-      this.schema = schema || {};
+      // Dereference local $ref to support $defs/definitions
+      const deref = this._dereferenceSchema(schema);
+      this.schema = deref || (schema || {});
       this.uiSchema = uiSchema || null;
       this._render();
       await this._initAjv(this.schema);
@@ -145,7 +147,7 @@
       this._data = next;
       // Reflect state to DOM subtree
       this._setValuesByPath(this.formEl, subSchema, path, value);
-
+      
       if (activeName) {
         const refocus = this.formEl.querySelector(`[name="${CSS.escape(activeName)}"]`);
         if (refocus) refocus.focus();
@@ -293,24 +295,28 @@
       if (schema.exclusiveMinimum != null) input.min = schema.exclusiveMinimum + 1;
       if (schema.exclusiveMaximum != null) input.max = schema.exclusiveMaximum - 1;
       if (schema.multipleOf != null) input.step = schema.multipleOf;
-      if (schema.pattern) input.pattern = schema.pattern;
-      if (schema.placeholder) input.placeholder = schema.placeholder;
+      if (schema.pattern != null) input.pattern = schema.pattern;
+      if (schema.placeholder != null) input.placeholder = schema.placeholder;
     }
 
     _applyDefault(input, schema) {
-      if (schema && schema.default != null) {
+      if (!schema) return;
+      if (schema.default != null) {
         if (input.type === 'checkbox') input.checked = Boolean(schema.default);
         else input.value = String(schema.default);
       }
     }
 
     _formatToInputType(format) {
-      switch (format) {
+      switch ((format || '').toLowerCase()) {
         case 'email': return 'email';
-        case 'uri': case 'url': return 'url';
+        case 'url': return 'url';
         case 'date': return 'date';
-        case 'date-time': return 'datetime-local';
         case 'time': return 'time';
+        case 'datetime':
+        case 'date-time': return 'datetime-local';
+        case 'color': return 'color';
+        case 'textarea': return 'text';
         default: return 'text';
       }
     }
@@ -319,41 +325,18 @@
       const wrapper = document.createElement('div');
       wrapper.className = 'mb-3';
       wrapper.dataset.path = path;
+
       const id = this._safeId(path);
-      const label = document.createElement('label');
-      label.className = 'form-label';
-      label.setAttribute('for', id);
-      label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : '');
+      const label = document.createElement('label'); label.className = 'form-label'; label.setAttribute('for', id); label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : '');
 
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.className = 'form-control';
-      input.id = id;
-      input.name = path;
-      if (schema.contentMediaType) input.accept = schema.contentMediaType;
-
-      const hidden = document.createElement('input');
-      hidden.type = 'hidden';
-      hidden.name = path;
+      const input = document.createElement('input'); input.className = 'form-control'; input.type = 'file'; input.id = id;
+      const hidden = document.createElement('input'); hidden.type = 'hidden'; hidden.name = path;
 
       input.addEventListener('change', async () => {
-        const file = input.files && input.files[0];
-        if (!file) { hidden.value = ''; return; }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result;
-          hidden.value = String(dataUrl);
-          if (this.liveValidate) this.validate();
-          this._emit('field:change', { path, value: hidden.value });
-          this._emit('form:change', { data: this.getData() });
-        };
-        reader.readAsDataURL(file);
+        const file = input.files && input.files[0]; if (!file) { hidden.value = ''; return; }
       });
 
-      wrapper.appendChild(label);
-      wrapper.appendChild(input);
-      wrapper.appendChild(hidden);
-      wrapper.appendChild(this._withInvalidFeedback(input));
+      wrapper.appendChild(label); wrapper.appendChild(input); wrapper.appendChild(hidden); wrapper.appendChild(this._withInvalidFeedback(input));
       if (schema.description) wrapper.appendChild(this._createHelpText(schema.description));
       return wrapper;
     }
@@ -395,76 +378,34 @@
         });
         this._applyDefault(control, schema);
       } else if (schema.type === 'string') {
-        const input = document.createElement('input');
-        input.className = 'form-control';
-        input.id = id;
-        input.name = path;
-        markPassiveIfDuplicate(input);
+        const input = document.createElement('input'); input.className = 'form-control'; input.id = id; input.name = path; markPassiveIfDuplicate(input);
         const widget = schema['x-ui-widget'];
         if (widget === 'textarea' || schema.format === 'textarea') {
-          const ta = document.createElement('textarea');
-          ta.className = 'form-control';
-          ta.id = id;
-          ta.name = path;
-          markPassiveIfDuplicate(ta);
-          this._setConstraints(ta, schema);
-          this._applyDefault(ta, schema);
-          if (isRequired) ta.required = true;
-          wrapper.appendChild(label);
-          wrapper.appendChild(ta);
-          wrapper.appendChild(this._withInvalidFeedback(ta));
-          if (schema.description) wrapper.appendChild(this._createHelpText(schema.description));
+          const ta = document.createElement('textarea'); ta.className = 'form-control'; ta.id = id; ta.name = path; markPassiveIfDuplicate(ta);
+          this._setConstraints(ta, schema); this._applyDefault(ta, schema); if (isRequired) ta.required = true;
+          wrapper.appendChild(label); wrapper.appendChild(ta); wrapper.appendChild(this._withInvalidFeedback(ta)); if (schema.description) wrapper.appendChild(this._createHelpText(schema.description));
           return wrapper;
         }
         if (widget === 'file' || schema.contentEncoding === 'base64' || schema.contentMediaType) {
           const fileWrapper = this._createFileControl(name, schema, path, isRequired);
-          const fileInput = fileWrapper.querySelector('input[type="file"]');
-          markPassiveIfDuplicate(fileInput);
+          const fileInput = fileWrapper.querySelector('input[type="file"]'); markPassiveIfDuplicate(fileInput);
           return fileWrapper;
         }
         input.type = widget === 'password' || schema.format === 'password' ? 'password' : (schema.format ? this._formatToInputType(schema.format) : 'text');
-        this._setConstraints(input, schema);
-        this._applyDefault(input, schema);
-        control = input;
+        this._setConstraints(input, schema); this._applyDefault(input, schema); control = input;
       } else if (schema.type === 'number' || schema.type === 'integer') {
-        const input = document.createElement('input');
-        input.className = 'form-control';
-        input.id = id;
-        input.name = path;
-        markPassiveIfDuplicate(input);
-        const widget = schema['x-ui-widget'];
-        input.type = widget === 'range' ? 'range' : 'number';
-        if (schema.type === 'integer' && !schema.multipleOf) input.step = '1';
-        this._setConstraints(input, schema);
-        this._applyDefault(input, schema);
-        control = input;
+        const input = document.createElement('input'); input.className = 'form-control'; input.id = id; input.name = path; markPassiveIfDuplicate(input);
+        const widget = schema['x-ui-widget']; input.type = widget === 'range' ? 'range' : 'number'; if (schema.type === 'integer' && !schema.multipleOf) input.step = '1';
+        this._setConstraints(input, schema); this._applyDefault(input, schema); control = input;
       } else if (schema.type === 'boolean') {
-        const div = document.createElement('div');
-        div.className = 'form-check';
-        const input = document.createElement('input');
-        input.className = 'form-check-input';
-        input.type = 'checkbox';
-        input.id = id;
-        input.name = path;
-        markPassiveIfDuplicate(input);
+        const div = document.createElement('div'); div.className = 'form-check';
+        const input = document.createElement('input'); input.className = 'form-check-input'; input.type = 'checkbox'; input.id = id; input.name = path; markPassiveIfDuplicate(input);
         this._applyDefault(input, schema);
-        const checkLabel = document.createElement('label');
-        checkLabel.className = 'form-check-label';
-        checkLabel.setAttribute('for', id);
-        checkLabel.textContent = this._getTitle(name, schema);
-        div.appendChild(input);
-        div.appendChild(checkLabel);
-        if (schema.description) div.appendChild(this._createHelpText(schema.description));
-        if (isRequired) input.required = true;
-        return div;
+        const checkLabel = document.createElement('label'); checkLabel.className = 'form-check-label'; checkLabel.setAttribute('for', id); checkLabel.textContent = this._getTitle(name, schema);
+        div.appendChild(input); div.appendChild(checkLabel); if (schema.description) div.appendChild(this._createHelpText(schema.description)); if (isRequired) input.required = true; return div;
       } else {
-        const input = document.createElement('input');
-        input.className = 'form-control';
-        input.id = id;
-        input.name = path;
-        markPassiveIfDuplicate(input);
-        input.type = 'text';
-        control = input;
+        const input = document.createElement('input'); input.className = 'form-control'; input.id = id; input.name = path; markPassiveIfDuplicate(input);
+        input.type = 'text'; control = input;
       }
 
       if (isRequired) control.required = true;
@@ -480,46 +421,25 @@
     _createOneAnyOfGroup(name, schema, path, isRequired) {
       const isOne = Array.isArray(schema.oneOf);
       const options = isOne ? schema.oneOf : schema.anyOf || [];
-      const container = document.createElement('div');
-      container.className = 'mb-3';
-      container.dataset.path = path;
+      const container = document.createElement('div'); container.className = 'mb-3'; container.dataset.path = path;
 
-      const label = document.createElement('label');
-      label.className = 'form-label';
-      label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : '');
-      container.appendChild(label);
+      const label = document.createElement('label'); label.className = 'form-label'; label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : ''); container.appendChild(label);
 
-      const select = document.createElement('select');
-      select.className = 'form-select mb-2';
-      options.forEach((opt, idx) => {
-        const o = document.createElement('option');
-        o.value = String(idx);
-        o.textContent = opt.title || (isOne ? `oneOf #${idx + 1}` : `anyOf #${idx + 1}`);
-        select.appendChild(o);
-      });
+      const select = document.createElement('select'); select.className = 'form-select mb-2';
+      options.forEach((opt, idx) => { const o = document.createElement('option'); o.value = String(idx); o.textContent = opt.title || (isOne ? `oneOf #${idx + 1}` : `anyOf #${idx + 1}`); select.appendChild(o); });
       container.appendChild(select);
 
-      const slot = document.createElement('div');
-      container.appendChild(slot);
+      const slot = document.createElement('div'); container.appendChild(slot);
 
-      const renderSelected = () => {
-        slot.innerHTML = '';
-        const idx = Number(select.value);
-        const chosen = options[idx] || {};
-        const child = this._createControlBySchema('', chosen, path, false);
-        slot.appendChild(child);
-      };
+      const renderSelected = () => { slot.innerHTML = ''; const idx = Number(select.value); const chosen = options[idx] || {}; const child = this._createControlBySchema('', chosen, path, false); slot.appendChild(child); };
 
       select.addEventListener('change', () => { renderSelected(); this._emit('field:change', { path, value: select.value }); this._emit('form:change', { data: this.getData() }); this.validate(); });
-      select.value = '0';
-      renderSelected();
-      return container;
+      select.value = '0'; renderSelected(); return container;
     }
 
     _mergeAllOf(schema) {
       if (!Array.isArray(schema.allOf)) return schema;
-      const merged = { ...schema };
-      delete merged.allOf;
+      const merged = { ...schema }; delete merged.allOf;
       for (const sub of schema.allOf) {
         if (sub.type === 'object' && sub.properties) {
           merged.type = 'object';
@@ -532,188 +452,97 @@
 
     _createObjectGroup(name, schema, path) {
       schema = this._mergeAllOf(schema);
-      const fieldset = document.createElement('fieldset');
-      fieldset.className = 'border rounded p-3 mb-3';
-      if (path) fieldset.dataset.path = path;
+      const fieldset = document.createElement('fieldset'); fieldset.className = 'border rounded p-3 mb-3'; if (path) fieldset.dataset.path = path;
 
-      if (name) {
-        const legend = document.createElement('legend');
-        legend.className = 'float-none w-auto px-2';
-        legend.textContent = this._getTitle(name, schema);
-        fieldset.appendChild(legend);
-      }
+      if (name) { const legend = document.createElement('legend'); legend.className = 'float-none w-auto px-2'; legend.textContent = this._getTitle(name, schema); fieldset.appendChild(legend); }
 
       const properties = schema.properties || {};
       const required = new Set(schema.required || []);
 
-      Object.keys(properties).forEach((propName) => {
-        const propSchema = properties[propName];
-        const childPath = path ? `${path}.${propName}` : propName;
-        const isReq = required.has(propName);
-        const element = this._createControlBySchema(propName, propSchema, childPath, isReq);
-        fieldset.appendChild(element);
-      });
+      Object.keys(properties).forEach((propName) => { const propSchema = properties[propName]; const childPath = path ? `${path}.${propName}` : propName; const isReq = required.has(propName); const element = this._createControlBySchema(propName, propSchema, childPath, isReq); fieldset.appendChild(element); });
 
       if (schema.description && !name) fieldset.appendChild(this._createHelpText(schema.description));
       return fieldset;
     }
 
     _createArrayGroup(name, schema, path, isRequired) {
-      const container = document.createElement('div');
-      container.className = 'mb-3';
-      container.dataset.path = path;
+      const container = document.createElement('div'); container.className = 'mb-3'; container.dataset.path = path;
 
-      const label = document.createElement('label');
-      label.className = 'form-label';
-      label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : '');
-      container.appendChild(label);
+      const label = document.createElement('label'); label.className = 'form-label'; label.textContent = this._getTitle(name, schema) + (isRequired ? ' *' : ''); container.appendChild(label);
 
-      const list = document.createElement('div');
-      list.className = 'array-items d-flex flex-column gap-3';
-      list.dataset.path = path;
-      container.appendChild(list);
+      const list = document.createElement('div'); list.className = 'array-items d-flex flex-column gap-3'; list.dataset.path = path; container.appendChild(list);
 
-      const controls = document.createElement('div');
-      controls.className = 'd-flex gap-2';
+      const controls = document.createElement('div'); controls.className = 'd-flex gap-2'; const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.textContent = 'Add item'; controls.appendChild(addBtn); container.appendChild(controls);
 
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'btn btn-sm btn-outline-primary';
-      addBtn.textContent = 'Add item';
-
-      controls.appendChild(addBtn);
-      container.appendChild(controls);
-
-      const minItems = typeof schema.minItems === 'number' ? schema.minItems : 0;
-      const maxItems = typeof schema.maxItems === 'number' ? schema.maxItems : Infinity;
+      const minItems = typeof schema.minItems === 'number' ? schema.minItems : 0; const maxItems = typeof schema.maxItems === 'number' ? schema.maxItems : Infinity;
 
       const updateAddState = () => { addBtn.disabled = list.children.length >= maxItems; };
       const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = list.children.length <= minItems; };
 
-      const addItem = (initialData) => {
-        const current = this.getValue(path) || [];
-        if (current.length >= maxItems) return;
-        const next = current.slice();
-        next.push(initialData !== undefined ? initialData : (schema.items && schema.items.type === 'object' ? {} : undefined));
-        this.setValue(path, next);
-        this._focusFirstInputInItem(path, next.length - 1);
-      };
+      const addItem = (initialData) => { const current = this.getValue(path) || []; if (current.length >= maxItems) return; const next = current.slice(); next.push(initialData !== undefined ? initialData : (schema.items && schema.items.type === 'object' ? {} : undefined)); this.setValue(path, next); this._focusFirstInputInItem(path, next.length - 1); };
 
       addBtn.addEventListener('click', () => { addItem(); });
 
-      if (Array.isArray(schema.default)) {
-        schema.default.forEach((val, idx) => this._buildArrayItem(list, schema, path, idx, val));
-      } else if (minItems > 0) {
-        for (let i = 0; i < minItems; i++) {
-          this._buildArrayItem(list, schema, path, i, (schema.items && schema.items.type === 'object') ? {} : undefined);
-        }
-      }
+      if (Array.isArray(schema.default)) { schema.default.forEach((val, idx) => this._buildArrayItem(list, schema, path, idx, val)); }
+      else if (minItems > 0) { for (let i = 0; i < minItems; i++) { this._buildArrayItem(list, schema, path, i, (schema.items && schema.items.type === 'object') ? {} : undefined); } }
       this._updateArrayControlsState(container, schema, path, list.children.length);
 
       return container;
     }
 
     _createArrayTable(scopePath, arraySchema) {
-      const container = document.createElement('div');
-      container.className = 'mb-3';
-      container.dataset.path = scopePath;
-      container.dataset.tablePath = scopePath;
-      const table = document.createElement('table');
-      table.className = 'table table-sm table-striped align-middle';
-      const thead = document.createElement('thead');
-      const tbody = document.createElement('tbody');
+      const container = document.createElement('div'); container.className = 'mb-3'; container.dataset.path = scopePath; container.dataset.tablePath = scopePath;
+      const table = document.createElement('table'); table.className = 'table table-sm table-striped align-middle';
+      const thead = document.createElement('thead'); const tbody = document.createElement('tbody');
 
       const properties = (arraySchema.items && arraySchema.items.properties) || {};
       const cols = Object.keys(properties);
 
-      const trh = document.createElement('tr');
-      cols.forEach((c) => { const th = document.createElement('th'); th.textContent = this._getTitle(c, properties[c]); trh.appendChild(th); });
-      const thAct = document.createElement('th'); thAct.textContent = 'Actions'; trh.appendChild(thAct);
-      thead.appendChild(trh);
+      const trh = document.createElement('tr'); cols.forEach((c) => { const th = document.createElement('th'); th.textContent = this._getTitle(c, properties[c]); trh.appendChild(th); }); const thAct = document.createElement('th'); thAct.textContent = 'Actions'; trh.appendChild(thAct); thead.appendChild(trh);
 
       const renderBody = () => this._renderArrayTableBody(container, arraySchema, scopePath);
 
-      const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.textContent = 'Add row';
-      addBtn.addEventListener('click', () => {
-        const current = this.getValue(scopePath) || [];
-        const max = arraySchema.maxItems || Infinity;
-        if (current.length >= max) return;
-        const next = current.slice();
-        next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined);
-        this.setValue(scopePath, next);
-        renderBody();
-      });
+      const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.textContent = 'Add row'; addBtn.addEventListener('click', () => { const current = this.getValue(scopePath) || []; const max = arraySchema.maxItems || Infinity; if (current.length >= max) return; const next = current.slice(); next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined); this.setValue(scopePath, next); renderBody(); });
 
       container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
 
-      // Editable or passive?
       // Initial body render based on state
       renderBody();
 
       // Cross-renderer sync: only re-render table when the array itself changes (add/remove/reorder)
-      this.on('field:change', ({ detail }) => {
-        const p = detail && detail.path;
-        if (p === scopePath) renderBody();
-      });
+      this.on('field:change', ({ detail }) => { const p = detail && detail.path; if (p === scopePath) renderBody(); });
 
       return container;
     }
 
     _renderArrayTableBody(container, arraySchema, basePath) {
-      const tbody = container.querySelector('tbody');
-      tbody.innerHTML = '';
-      const properties = (arraySchema.items && arraySchema.items.properties) || {};
-      const cols = Object.keys(properties);
+      const tbody = container.querySelector('tbody'); tbody.innerHTML = '';
+      const properties = (arraySchema.items && arraySchema.items.properties) || {}; const cols = Object.keys(properties);
       const data = this.getData();
       // Resolve array from state
-      const tokens = this._tokenizePath(basePath);
-      let arr = data;
-      for (const t of tokens) { arr = (arr == null) ? [] : (typeof t === 'number' ? (Array.isArray(arr) ? arr[t] : []) : arr[t]); }
+      const tokens = this._tokenizePath(basePath); let arr = data; for (const t of tokens) { arr = (arr == null) ? [] : (typeof t === 'number' ? (Array.isArray(arr) ? arr[t] : []) : arr[t]); }
       if (!Array.isArray(arr)) arr = [];
       arr.forEach((row, rowIndex) => {
         const tr = document.createElement('tr');
-        cols.forEach((c) => {
-          const td = document.createElement('td');
-          const cellPath = `${basePath}[${rowIndex}].${c}`;
-          const ctrl = this._createControlBySchema('', properties[c], cellPath, false);
-          td.appendChild(ctrl);
-          tr.appendChild(td);
-        });
+        cols.forEach((c) => { const td = document.createElement('td'); const cellPath = `${basePath}[${rowIndex}].${c}`; const ctrl = this._createControlBySchema('', properties[c], cellPath, false); td.appendChild(ctrl); tr.appendChild(td); });
         // Populate row inputs with current state values
         this._setValuesByPath(tr, arraySchema.items || {}, `${basePath}[${rowIndex}]`, row);
         const tdAct = document.createElement('td');
         const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'btn btn-sm btn-outline-danger'; rm.textContent = 'Remove';
-        rm.addEventListener('click', () => {
-          const current = this.getValue(basePath) || [];
-          const min = arraySchema.minItems || 0;
-          if (current.length <= min) return;
-          const next = current.filter((_, i) => i !== rowIndex);
-          this.setValue(basePath, next);
-          this._renderArrayTableBody(container, arraySchema, basePath);
-        });
-              tdAct.appendChild(rm); tr.appendChild(tdAct);
-      tbody.appendChild(tr);
-    });
-    // Update controls state and attach listeners for newly created inputs
-    this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
-    this._attachControlListeners(tbody);
+        rm.addEventListener('click', () => { const current = this.getValue(basePath) || []; const min = arraySchema.minItems || 0; if (current.length <= min) return; const next = current.filter((_, i) => i !== rowIndex); this.setValue(basePath, next); this._renderArrayTableBody(container, arraySchema, basePath); });
+        tdAct.appendChild(rm); tr.appendChild(tdAct); tbody.appendChild(tr);
+      });
+      // Update controls state and attach listeners for newly created inputs
+      this._updateArrayControlsState(container, arraySchema, basePath, arr.length);
+      this._attachControlListeners(tbody);
     }
 
-    _focusFirstInputInItem(basePath, index) {
-      const prefix = `${basePath}[${index}]`;
-      const target = this.formEl.querySelector(`[name^="${CSS.escape(prefix)}"]`);
-      if (target) target.focus();
-    }
+    _focusFirstInputInItem(basePath, index) { const prefix = `${basePath}[${index}]`; const target = this.formEl.querySelector(`[name^="${CSS.escape(prefix)}"]`); if (target) target.focus(); }
 
     _buildArrayItem(list, arraySchema, basePath, index, initialData) {
-      const itemWrapper = document.createElement('div');
-      itemWrapper.className = 'border rounded p-3 position-relative';
-      itemWrapper.dataset.path = `${basePath}[${index}]`;
+      const itemWrapper = document.createElement('div'); itemWrapper.className = 'border rounded p-3 position-relative'; itemWrapper.dataset.path = `${basePath}[${index}]`;
 
-      const btnGroup = document.createElement('div');
-      btnGroup.className = 'position-absolute d-flex gap-2';
-      btnGroup.style.top = '8px';
-      btnGroup.style.right = '8px';
+      const btnGroup = document.createElement('div'); btnGroup.className = 'position-absolute d-flex gap-2'; btnGroup.style.top = '8px'; btnGroup.style.right = '8px';
 
       const upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.className = 'btn btn-sm btn-outline-secondary'; upBtn.textContent = '↑';
       const downBtn = document.createElement('button'); downBtn.type = 'button'; downBtn.className = 'btn btn-sm btn-outline-secondary'; downBtn.textContent = '↓';
@@ -724,54 +553,20 @@
       const itemPath = `${basePath}[${index}]`;
       const itemContent = this._createControlBySchema('', arraySchema.items || {}, itemPath, false);
 
-      itemWrapper.appendChild(btnGroup);
-      itemWrapper.appendChild(itemContent);
-      list.appendChild(itemWrapper);
+      itemWrapper.appendChild(btnGroup); itemWrapper.appendChild(itemContent); list.appendChild(itemWrapper);
 
       if (initialData !== undefined) this._setValuesByPath(itemWrapper, arraySchema.items || {}, itemPath, initialData);
 
-      removeBtn.addEventListener('click', () => {
-        const current = this.getValue(basePath) || [];
-        const min = arraySchema.minItems || 0;
-        if (current.length <= min) return;
-        const next = current.filter((_, i) => i !== index);
-        this.setValue(basePath, next);
-        const newLen = next.length;
-        if (newLen > 0) this._focusFirstInputInItem(basePath, Math.min(index, newLen - 1));
-      });
+      removeBtn.addEventListener('click', () => { const current = this.getValue(basePath) || []; const min = arraySchema.minItems || 0; if (current.length <= min) return; const next = current.filter((_, i) => i !== index); this.setValue(basePath, next); const newLen = next.length; if (newLen > 0) this._focusFirstInputInItem(basePath, Math.min(index, newLen - 1)); });
 
-      upBtn.addEventListener('click', () => {
-        const current = this.getValue(basePath) || [];
-        if (index > 0) {
-          const next = current.slice();
-          const tmp = next[index - 1]; next[index - 1] = next[index]; next[index] = tmp;
-          this.setValue(basePath, next);
-          this._focusFirstInputInItem(basePath, index - 1);
-        }
-      });
+      upBtn.addEventListener('click', () => { const current = this.getValue(basePath) || []; if (index > 0) { const next = current.slice(); const tmp = next[index - 1]; next[index - 1] = next[index]; next[index] = tmp; this.setValue(basePath, next); this._focusFirstInputInItem(basePath, index - 1); } });
 
-      downBtn.addEventListener('click', () => {
-        const current = this.getValue(basePath) || [];
-        if (index < current.length - 1) {
-          const next = current.slice();
-          const tmp = next[index + 1]; next[index + 1] = next[index]; next[index] = tmp;
-          this.setValue(basePath, next);
-          this._focusFirstInputInItem(basePath, index + 1);
-        }
-      });
+      downBtn.addEventListener('click', () => { const current = this.getValue(basePath) || []; if (index < current.length - 1) { const next = current.slice(); const tmp = next[index + 1]; next[index + 1] = next[index]; next[index] = tmp; this.setValue(basePath, next); this._focusFirstInputInItem(basePath, index + 1); } });
 
       return itemWrapper;
     }
 
-    _renumberArrayItemNames(listElement, basePath) {
-      Array.from(listElement.children).forEach((itemWrapper, newIndex) => {
-        const inputs = itemWrapper.querySelectorAll('[name]');
-        inputs.forEach((input) => {
-          input.name = input.name.replace(new RegExp(`^${this._escapeRegExp(basePath)}\\[\\d+\\]`), `${basePath}[${newIndex}]`);
-          if (input.id) input.id = this._safeId(input.name);
-        });
-      });
-    }
+    _renumberArrayItemNames(listElement, basePath) { Array.from(listElement.children).forEach((itemWrapper, newIndex) => { const inputs = itemWrapper.querySelectorAll('[name]'); inputs.forEach((input) => { input.name = input.name.replace(new RegExp(`^${this._escapeRegExp(basePath)}\\[\\d+\\]`), `${basePath}[${newIndex}]`); if (input.id) input.id = this._safeId(input.name); }); }); }
 
     _escapeRegExp(string) { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
     _safeId(path) { return path.replace(/[^a-zA-Z0-9_-]/g, '_'); }
@@ -794,6 +589,7 @@
       for (let i = 0; i < parts.length; i++) {
         if (parts[i] === 'properties') { i++; if (i < parts.length) pathParts.push(parts[i]); }
         else if (parts[i] === 'items') { /* skip */ }
+        else if (parts[i] === '$defs' || parts[i] === 'definitions') { /* skip defs in name paths */ i++; }
       }
       return pathParts.join('.');
     }
@@ -835,13 +631,7 @@
       const tabsId = 'tabs_' + Math.random().toString(36).slice(2);
       const nav = document.createElement('ul'); nav.className = 'nav nav-tabs mb-3'; nav.role = 'tablist';
       const content = document.createElement('div'); content.className = 'tab-content';
-      (element.elements || []).forEach((cat, idx) => {
-        if (!cat || cat.type !== 'Category') return;
-        const tabId = `${tabsId}_tab_${idx}`; const paneId = `${tabsId}_pane_${idx}`;
-        const li = document.createElement('li'); li.className = 'nav-item';
-        const a = document.createElement('button'); a.className = `nav-link${idx === 0 ? ' active' : ''}`; a.id = tabId; a.dataset.bsToggle = 'tab'; a.dataset.bsTarget = `#${paneId}`; a.type = 'button'; a.role = 'tab'; a.textContent = cat.label || `Category ${idx + 1}`; li.appendChild(a); nav.appendChild(li);
-        const pane = document.createElement('div'); pane.className = `tab-pane fade${idx === 0 ? ' show active' : ''}`; pane.id = paneId; pane.role = 'tabpanel'; (cat.elements || []).forEach((el) => pane.appendChild(this._renderUiElement(el, schema))); content.appendChild(pane);
-      });
+      (element.elements || []).forEach((cat, idx) => { if (!cat || cat.type !== 'Category') return; const tabId = `${tabsId}_tab_${idx}`; const paneId = `${tabsId}_pane_${idx}`; const li = document.createElement('li'); li.className = 'nav-item'; const a = document.createElement('button'); a.className = `nav-link${idx === 0 ? ' active' : ''}`; a.id = tabId; a.dataset.bsToggle = 'tab'; a.dataset.bsTarget = `#${paneId}`; a.type = 'button'; a.role = 'tab'; a.textContent = cat.label || `Category ${idx + 1}`; li.appendChild(a); nav.appendChild(li); const pane = document.createElement('div'); pane.className = `tab-pane fade${idx === 0 ? ' show active' : ''}`; pane.id = paneId; pane.role = 'tabpanel'; (cat.elements || []).forEach((el) => pane.appendChild(this._renderUiElement(el, schema))); content.appendChild(pane); });
       const wrapper = document.createElement('div'); wrapper.appendChild(nav); wrapper.appendChild(content); return wrapper;
     }
 
@@ -855,61 +645,16 @@
       const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary mb-2'; addBtn.textContent = 'Add item';
       let selectedIndex = 0;
 
+      const renderList = () => { listGroup.innerHTML = ''; const arr = this.getValue(arrayPath) || []; for (let i = 0; i < arr.length; i++) { const a = document.createElement('button'); a.type = 'button'; a.className = `list-group-item list-group-item-action${i === selectedIndex ? ' active' : ''}`; a.textContent = `Item ${i + 1}`; a.addEventListener('click', () => { selectedIndex = i; renderList(); renderDetail(); }); listGroup.appendChild(a); } };
 
+      const renderDetail = () => { detailCol.innerHTML = ''; const arr = this.getValue(arrayPath) || []; if (arr.length === 0) return; if (selectedIndex < 0) selectedIndex = 0; if (selectedIndex > arr.length - 1) selectedIndex = arr.length - 1; const itemPath = `${arrayPath}[${selectedIndex}]`; const itemSchema = arraySchema.items || {}; if (element.detail) { const adapted = this._renderUiElementWithBase(element.detail, schema, itemPath); detailCol.appendChild(adapted); } else { const child = this._createControlBySchema('', itemSchema, itemPath, false); detailCol.appendChild(child); } this._setValuesByPath(detailCol, itemSchema, itemPath, arr[selectedIndex]); this._attachControlListeners(detailCol); };
 
-      const renderList = () => {
-        listGroup.innerHTML = '';
-        const arr = this.getValue(arrayPath) || [];
-        for (let i = 0; i < arr.length; i++) {
-          const a = document.createElement('button'); a.type = 'button'; a.className = `list-group-item list-group-item-action${i === selectedIndex ? ' active' : ''}`; a.textContent = `Item ${i + 1}`;
-          a.addEventListener('click', () => { selectedIndex = i; renderList(); renderDetail(); });
-          listGroup.appendChild(a);
-        }
-      };
+      addBtn.addEventListener('click', () => { const current = this.getValue(arrayPath) || []; const next = current.slice(); next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined); this.setValue(arrayPath, next); selectedIndex = next.length - 1; renderList(); renderDetail(); });
 
-      const renderDetail = () => {
-        detailCol.innerHTML = '';
-        const arr = this.getValue(arrayPath) || [];
-        if (arr.length === 0) return;
-        // Clamp selected index within bounds
-        if (selectedIndex < 0) selectedIndex = 0;
-        if (selectedIndex > arr.length - 1) selectedIndex = arr.length - 1;
-        const itemPath = `${arrayPath}[${selectedIndex}]`;
-        const itemSchema = arraySchema.items || {};
-        if (element.detail) {
-          const adapted = this._renderUiElementWithBase(element.detail, schema, itemPath);
-          detailCol.appendChild(adapted);
-        } else {
-          const child = this._createControlBySchema('', itemSchema, itemPath, false);
-          detailCol.appendChild(child);
-        }
-        // Hydrate detail from state so previously typed values persist
-        this._setValuesByPath(detailCol, itemSchema, itemPath, arr[selectedIndex]);
-        // Ensure inputs in detail update state
-        this._attachControlListeners(detailCol);
-      };
-
-      addBtn.addEventListener('click', () => {
-        const current = this.getValue(arrayPath) || [];
-        const next = current.slice();
-        next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined);
-        this.setValue(arrayPath, next);
-        selectedIndex = next.length - 1;
-        // Hydrate detail from state (prevents clearing other items)
-        renderList(); renderDetail();
-      });
-
-      listCol.appendChild(addBtn); listCol.appendChild(listGroup); wrapper.appendChild(listCol); wrapper.appendChild(detailCol);
-      renderList(); renderDetail();
+      listCol.appendChild(addBtn); listCol.appendChild(listGroup); wrapper.appendChild(listCol); wrapper.appendChild(detailCol); renderList(); renderDetail();
 
       // Cross-renderer sync: only re-render list/detail when the array itself changes (add/remove/reorder)
-      this.on('field:change', ({ detail }) => {
-        const p = detail && detail.path;
-        if (p === arrayPath) {
-          renderList();
-          renderDetail();
-        }
-      });
+      this.on('field:change', ({ detail }) => { const p = detail && detail.path; if (p === arrayPath) { renderList(); renderDetail(); } });
 
       return wrapper;
     }
@@ -927,15 +672,7 @@
 
           const custom = this._pickCustomRenderer(element, effective, path, name, required);
           if (custom) {
-            const ctx = {
-              element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema,
-              path, label: name, required, instance: this,
-              utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) },
-              emit: (ev, detail) => this._emit(ev, detail),
-              setValue: (v) => this.setValue(path, v),
-              getValue: () => this.getValue(path),
-              validate: () => this.validate(),
-            };
+            const ctx = { element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema, path, label: name, required, instance: this, utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) }, emit: (ev, detail) => this._emit(ev, detail), setValue: (v) => this.setValue(path, v), getValue: () => this.getValue(path), validate: () => this.validate(), };
             const rendered = custom.render(ctx);
             if (rendered && !rendered.dataset.path) rendered.dataset.path = path;
             return rendered || document.createElement('div');
@@ -944,33 +681,14 @@
           const el = this._createControlBySchema(name, effective, path, required);
           return el;
         }
-        case 'Group': {
-          const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3';
-          if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); }
-          (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, basePath)));
-          return fs;
-        }
-        case 'VerticalLayout': {
-          const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElementWithBase(el, schema, basePath))); return c;
-        }
-        case 'HorizontalLayout': {
-          const row = document.createElement('div'); row.className = 'row g-3';
-          const children = element.elements || [];
-          children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, basePath)); row.appendChild(col); });
-          return row;
-        }
+        case 'Group': { const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3'; if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); } (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, basePath))); return fs; }
+        case 'VerticalLayout': { const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElementWithBase(el, schema, basePath))); return c; }
+        case 'HorizontalLayout': { const row = document.createElement('div'); row.className = 'row g-3'; const children = element.elements || []; children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, basePath)); row.appendChild(col); }); return row; }
         default: return this._renderUiElement(element, schema);
       }
     }
 
-    _applyUiOptionsToSchema(schema, options) {
-      if (!options) return schema;
-      const copy = { ...schema };
-      if (options.widget) copy['x-ui-widget'] = options.widget;
-      if (options.placeholder) copy.placeholder = options.placeholder;
-      if (options.description) copy.description = options.description;
-      return copy;
-    }
+    _applyUiOptionsToSchema(schema, options) { if (!options) return schema; const copy = { ...schema }; if (options.widget) copy['x-ui-widget'] = options.widget; if (options.placeholder) copy.placeholder = options.placeholder; if (options.description) copy.description = options.description; return copy; }
 
     _renderUiElement(element, schema) {
       if (!element || typeof element !== 'object') return document.createElement('div');
@@ -981,18 +699,8 @@
       let rendered;
       switch (element.type) {
         case 'VerticalLayout': { const c = document.createElement('div'); (element.elements || []).forEach((el) => c.appendChild(this._renderUiElementWithBase(el, schema, ''))); rendered = c; break; }
-        case 'HorizontalLayout': {
-          const row = document.createElement('div'); row.className = 'row g-3';
-          const children = element.elements || [];
-          children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, '')); row.appendChild(col); });
-          rendered = row; break;
-        }
-        case 'Group': {
-          const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3';
-          if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); }
-          (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, '')));
-          rendered = fs; break;
-        }
+        case 'HorizontalLayout': { const row = document.createElement('div'); row.className = 'row g-3'; const children = element.elements || []; children.forEach((el) => { const col = document.createElement('div'); col.className = `col-${Math.floor(12 / Math.min(children.length, 4))}`; col.appendChild(this._renderUiElementWithBase(el, schema, '')); row.appendChild(col); }); rendered = row; break; }
+        case 'Group': { const fs = document.createElement('fieldset'); fs.className = 'border rounded p-3 mb-3'; if (element.label) { const lg = document.createElement('legend'); lg.className = 'float-none w-auto px-2'; lg.textContent = element.label; fs.appendChild(lg); } (element.elements || []).forEach((el) => fs.appendChild(this._renderUiElementWithBase(el, schema, ''))); rendered = fs; break; }
         case 'Control': {
           const scope = element.scope; const path = this._pointerToPath(scope);
           if (element.renderer === 'Table') { const arrSchema = this._findSchemaForPath(schema, path); rendered = this._createArrayTable(path, arrSchema); break; }
@@ -1001,20 +709,7 @@
           const required = this._isPathRequired(schema, path); const effective = this._applyUiOptionsToSchema(subSchema, element.options);
 
           const custom = this._pickCustomRenderer(element, effective, path, name, required);
-          if (custom) {
-            const ctx = {
-              element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema,
-              path, label: name, required, instance: this,
-              utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) },
-              emit: (ev, detail) => this._emit(ev, detail),
-              setValue: (v) => this.setValue(path, v),
-              getValue: () => this.getValue(path),
-              validate: () => this.validate(),
-            };
-            rendered = custom.render(ctx) || document.createElement('div');
-            if (rendered && !rendered.dataset.path) rendered.dataset.path = path;
-            break;
-          }
+          if (custom) { const ctx = { element, uiSchema: this.uiSchema, controlSchema: effective, rootSchema: this.schema, path, label: name, required, instance: this, utils: { createDefault: () => this._createControlBySchema(name, effective, path, required) }, emit: (ev, detail) => this._emit(ev, detail), setValue: (v) => this.setValue(path, v), getValue: () => this.getValue(path), validate: () => this.validate(), }; rendered = custom.render(ctx) || document.createElement('div'); if (rendered && !rendered.dataset.path) rendered.dataset.path = path; break; }
 
           rendered = this._createControlBySchema(name, effective, path, required); break;
         }
@@ -1067,15 +762,7 @@
       const formData = {};
       // Do not call reportValidity here to avoid focus jumps during typing
       const allControls = this.formEl.querySelectorAll('[name]');
-      allControls.forEach((el) => {
-        const name = el.name; if (!name) return;
-        let value; const subSchema = this._findSchemaForPath(schema, name);
-        if (el.type === 'checkbox') value = el.checked;
-        else if (el.tagName === 'SELECT') value = el.value === '' ? undefined : el.value;
-        else if (el.type === 'number' || el.type === 'range') value = el.value === '' ? undefined : el.value;
-        else if (el.type === 'file') return; else value = el.value;
-        const coerced = this._coerceValue(subSchema, value); if (coerced !== undefined) this._setNestedValue(formData, name, coerced);
-      });
+      allControls.forEach((el) => { const name = el.name; if (!name) return; let value; const subSchema = this._findSchemaForPath(schema, name); if (el.type === 'checkbox') value = el.checked; else if (el.tagName === 'SELECT') value = el.value === '' ? undefined : el.value; else if (el.type === 'number' || el.type === 'range') value = el.value === '' ? undefined : el.value; else if (el.type === 'file') return; else value = el.value; const coerced = this._coerceValue(subSchema, value); if (coerced !== undefined) this._setNestedValue(formData, name, coerced); });
       return formData;
     }
 
@@ -1096,220 +783,104 @@
       } else if (schema.type === 'array') {
         // If table-based renderer exists, render table body
         const tableContainer = rootElement.querySelector(`[data-table-path="${CSS.escape(basePath)}"]`);
-        if (tableContainer) {
-          this._renderArrayTableBody(tableContainer, schema, basePath);
-          return;
-        }
+        if (tableContainer) { this._renderArrayTableBody(tableContainer, schema, basePath); return; }
         const list = rootElement.querySelector(`.array-items[data-path="${CSS.escape(basePath)}"]`); if (!list) return; list.innerHTML = '';
         const arr = Array.isArray(value) ? value : [];
-        arr.forEach((itemVal, idx) => {
-          const itemEl = this._buildArrayItem(list, schema, basePath, idx, itemVal);
-          // Hydrate newly created item inputs from state
-          this._setValuesByPath(itemEl, schema.items || {}, `${basePath}[${idx}]`, itemVal);
-        });
-        const container = list.parentElement;
-        this._updateArrayControlsState(container, schema, basePath, arr.length);
-        // Attach listeners for newly created inputs
-        this._attachControlListeners(list);
+        arr.forEach((itemVal, idx) => { const itemEl = this._buildArrayItem(list, schema, basePath, idx, itemVal); this._setValuesByPath(itemEl, schema.items || {}, `${basePath}[${idx}]`, itemVal); });
+        const container = list.parentElement; this._updateArrayControlsState(container, schema, basePath, arr.length); this._attachControlListeners(list);
       } else {
-        const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return;
-        if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
+        const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return; if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
       }
     }
 
-    _download(filename, text) {
-      const blob = new Blob([text], { type: 'application/json' });
-      const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    }
+    _download(filename, text) { const blob = new Blob([text], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
-    _ajvInstancePathToNamePath(instancePath) {
-      if (!instancePath) return '';
-      const parts = instancePath.split('/').slice(1);
-      let name = '';
-      parts.forEach((p) => {
-        if (p === '') return; const key = p.replace(/~1/g, '/').replace(/~0/g, '~');
-        if (/^\d+$/.test(key)) name += `[${Number(key)}]`; else name += name ? `.${key}` : key;
-      });
-      return name;
-    }
+    _ajvInstancePathToNamePath(instancePath) { if (!instancePath) return ''; const parts = instancePath.split('/').slice(1); let name = ''; parts.forEach((p) => { if (p === '') return; const key = p.replace(/~1/g, '/').replace(/~0/g, '~'); if (/^\d+$/.test(key)) name += `[${Number(key)}]`; else name += name ? `.${key}` : key; }); return name; }
 
-    _clearAllFieldErrors() {
-      this.formEl.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
-      this.formEl.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; });
-      this.formEl.querySelectorAll('.sf-array-error').forEach((el) => el.remove());
-    }
+    _clearAllFieldErrors() { this.formEl.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid')); this.formEl.querySelectorAll('.invalid-feedback').forEach((el) => { el.textContent = 'Please provide a valid value.'; }); this.formEl.querySelectorAll('.sf-array-error').forEach((el) => el.remove()); }
 
-    _setContainerError(path, message) {
-      const container = this._findContainerByPath(path);
-      if (!container) return;
-      let msg = container.querySelector('.sf-array-error');
-      if (!msg) {
-        msg = document.createElement('div');
-        msg.className = 'sf-array-error text-danger small mt-1';
-        container.appendChild(msg);
-      }
-      msg.textContent = message || 'Invalid value';
-    }
+    _setContainerError(path, message) { const container = this._findContainerByPath(path); if (!container) return; let msg = container.querySelector('.sf-array-error'); if (!msg) { msg = document.createElement('div'); msg.className = 'sf-array-error text-danger small mt-1'; container.appendChild(msg); } msg.textContent = message || 'Invalid value'; }
 
-    _namePathFromAjvError(err) {
-      const base = this._ajvInstancePathToNamePath(err.instancePath || '');
-      if (err.keyword === 'required' && err.params && err.params.missingProperty) {
-        return base ? `${base}.${err.params.missingProperty}` : String(err.params.missingProperty);
-      }
-      return base;
-    }
+    _namePathFromAjvError(err) { const base = this._ajvInstancePathToNamePath(err.instancePath || ''); if (err.keyword === 'required' && err.params && err.params.missingProperty) { return base ? `${base}.${err.params.missingProperty}` : String(err.params.missingProperty); } return base; }
 
-    _getLocaleMessage(err) {
-      const loc = this.locale || 'en';
-      const map = {
-        de: { required: 'Pflichtfeld fehlt', minimum: 'Wert ist zu klein', maximum: 'Wert ist zu groß', pattern: 'Ungültiges Format', type: 'Falscher Typ' },
-        es: { required: 'Falta un campo obligatorio', minimum: 'Valor demasiado bajo', maximum: 'Valor demasiado alto', pattern: 'Formato inválido', type: 'Tipo incorrecto' },
-        fr: { required: 'Champ obligatoire manquant', minimum: 'Valeur trop petite', maximum: 'Valeur trop grande', pattern: 'Format invalide', type: 'Type incorrect' },
-        zh: { required: '缺少必填字段', minimum: '值太小', maximum: '值太大', pattern: '格式无效', type: '类型不正确' },
-      };
-      const dict = map[loc];
-      if (dict && dict[err.keyword]) return dict[err.keyword];
-      return err.message || 'Invalid value';
-    }
+    _getLocaleMessage(err) { const loc = this.locale || 'en'; const map = { de: { required: 'Pflichtfeld fehlt', minimum: 'Wert ist zu klein', maximum: 'Wert ist zu groß', pattern: 'Ungültiges Format', type: 'Falscher Typ' }, es: { required: 'Falta un campo obligatorio', minimum: 'Valor demasiado bajo', maximum: 'Valor demasiado alto', pattern: 'Formato inválido', type: 'Tipo incorrecto' }, fr: { required: 'Champ obligatoire manquant', minimum: 'Valeur trop petite', maximum: 'Valeur trop grande', pattern: 'Format invalide', type: 'Type incorrect' }, zh: { required: '缺少必填字段', minimum: '值太小', maximum: '值太大', pattern: '格式无效', type: '类型不正确' }, }; const dict = map[loc]; if (dict && dict[err.keyword]) return dict[err.keyword]; return err.message || 'Invalid value'; }
 
-    _setFieldError(namePath, messageOrErr) {
-      if (!namePath) return;
-      const el = this.formEl.querySelector(`[name="${CSS.escape(namePath)}"]`);
-      if (el) {
-        el.classList.add('is-invalid');
-        const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback');
-        const message = typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr);
-        if (feedback) feedback.textContent = message || 'Invalid value';
-        return;
-      }
-      // Fallback: container-level error (arrays/objects)
-      this._setContainerError(namePath, typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr));
-    }
+    _setFieldError(namePath, messageOrErr) { if (!namePath) return; const el = this.formEl.querySelector(`[name="${CSS.escape(namePath)}"]`); if (el) { el.classList.add('is-invalid'); const feedback = el.parentElement && el.parentElement.querySelector('.invalid-feedback'); const message = typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr); if (feedback) feedback.textContent = message || 'Invalid value'; return; } this._setContainerError(namePath, typeof messageOrErr === 'string' ? messageOrErr : this._getLocaleMessage(messageOrErr)); }
 
     // Rules
-    _evaluateCondition(cond, data) {
-      if (!cond) return true;
-      const path = this._pointerToPath(cond.scope || '');
-      const tokens = this._tokenizePath(path);
-      let node = data;
-      for (const t of tokens) { if (node == null) break; node = typeof t === 'number' ? (Array.isArray(node) ? node[t] : undefined) : node[t]; }
-      if ('equals' in cond) return node === cond.equals;
-      if (cond.schema && 'const' in cond.schema) return node === cond.schema.const;
-      return Boolean(node);
-    }
+    _evaluateCondition(cond, data) { if (!cond) return true; const path = this._pointerToPath(cond.scope || ''); const tokens = this._tokenizePath(path); let node = data; for (const t of tokens) { if (node == null) break; node = typeof t === 'number' ? (Array.isArray(node) ? node[t] : undefined) : node[t]; } if ('equals' in cond) return node === cond.equals; if (cond.schema && 'const' in cond.schema) return node === cond.schema.const; return Boolean(node); }
 
-    _applyRuleToElement(el, rule, data) {
-      const pass = this._evaluateCondition(rule.condition, data);
-      const effect = rule.effect || 'HIDE';
-      if (effect === 'HIDE') el.classList.toggle('d-none', pass);
-      else if (effect === 'DISABLE') el.querySelectorAll('input,select,textarea,button').forEach((inp) => inp.disabled = pass);
-    }
+    _applyRuleToElement(el, rule, data) { const pass = this._evaluateCondition(rule.condition, data); const effect = rule.effect || 'HIDE'; if (effect === 'HIDE') el.classList.toggle('d-none', pass); else if (effect === 'DISABLE') el.querySelectorAll('input,select,textarea,button').forEach((inp) => inp.disabled = pass); }
 
-    _applyUiRules() {
-      const data = this._data || {};
-      this.formEl.querySelectorAll('[data-rule]').forEach((container) => { try { const rule = JSON.parse(container.dataset.rule); this._applyRuleToElement(container, rule, data); } catch (_) {} });
-      (this._dynamicRules || []).forEach((rule) => {
-        const targetPath = this._pointerToPath(rule.target || rule.condition?.scope || '');
-        const targetEl = this._findContainerByPath(targetPath);
-        if (targetEl) this._applyRuleToElement(targetEl, rule, data);
-      });
-    }
+    _applyUiRules() { const data = this._data || {}; this.formEl.querySelectorAll('[data-rule]').forEach((container) => { try { const rule = JSON.parse(container.dataset.rule); this._applyRuleToElement(container, rule, data); } catch (_) {} }); (this._dynamicRules || []).forEach((rule) => { const targetPath = this._pointerToPath(rule.target || rule.condition?.scope || ''); const targetEl = this._findContainerByPath(targetPath); if (targetEl) this._applyRuleToElement(targetEl, rule, data); }); }
 
-    _findContainerByPath(path) {
-      if (!path) return null;
-      let el = this.formEl.querySelector(`[data-path="${CSS.escape(path)}"]`);
-      if (el) return el;
-      const input = this.formEl.querySelector(`[name="${CSS.escape(path)}"]`);
-      if (!input) return null;
-      el = input.closest('[data-path]') || input.closest('.mb-3') || input.closest('fieldset');
-      return el;
-    }
+    _findContainerByPath(path) { if (!path) return null; let el = this.formEl.querySelector(`[data-path="${CSS.escape(path)}"]`); if (el) return el; const input = this.formEl.querySelector(`[name="${CSS.escape(path)}"]`); if (!input) return null; el = input.closest('[data-path]') || input.closest('.mb-3') || input.closest('fieldset'); return el; }
 
-    _updateArrayControlsState(container, schema, basePath, length) {
-      const addBtn = container.querySelector('.btn-outline-primary');
-      if (addBtn) addBtn.disabled = length >= (schema.maxItems || Infinity);
-      const removeBtns = container.querySelectorAll('.btn-remove');
-      removeBtns.forEach((btn) => {
-        btn.disabled = length <= (schema.minItems || 0);
-      });
-    }
+    _updateArrayControlsState(container, schema, basePath, length) { const addBtn = container.querySelector('.btn-outline-primary'); if (addBtn) addBtn.disabled = length >= (schema.maxItems || Infinity); const removeBtns = container.querySelectorAll('.btn-remove'); removeBtns.forEach((btn) => { btn.disabled = length <= (schema.minItems || 0); }); }
 
-    _getValueByPath(path) {
-      const tokens = this._tokenizePath(path);
-      let node = this._data;
-      for (let i = 0; i < tokens.length; i++) {
-        const t = tokens[i];
-        if (node == null) return undefined;
-        node = typeof t === 'number' ? (Array.isArray(node) ? node[t] : undefined) : node[t];
-      }
-      return node;
-    }
+    _getValueByPath(path) { const tokens = this._tokenizePath(path); let node = this._data; for (let i = 0; i < tokens.length; i++) { const t = tokens[i]; if (node == null) return undefined; node = typeof t === 'number' ? (Array.isArray(node) ? node[t] : undefined) : node[t]; } return node; }
 
+    _updateStateFromElement(el) { const name = el.name; if (!name) return; const subSchema = this._findSchemaForPath(this.schema, name); let value; if (el.type === 'checkbox') value = el.checked; else if (el.tagName === 'SELECT') value = el.value === '' ? undefined : el.value; else if (el.type === 'number' || el.type === 'range') value = el.value === '' ? undefined : el.value; else if (el.type === 'file') return; else value = el.value; const coerced = this._coerceValue(subSchema, value); const next = JSON.parse(JSON.stringify(this._data || {})); if (coerced !== undefined) this._setNestedValue(next, name, coerced); this._data = next; }
 
-
-    _updateStateFromElement(el) {
-      const name = el.name;
-      if (!name) return;
-      const subSchema = this._findSchemaForPath(this.schema, name);
-      let value;
-      if (el.type === 'checkbox') value = el.checked;
-      else if (el.tagName === 'SELECT') value = el.value === '' ? undefined : el.value;
-      else if (el.type === 'number' || el.type === 'range') value = el.value === '' ? undefined : el.value;
-      else if (el.type === 'file') return;
-      else value = el.value;
-      const coerced = this._coerceValue(subSchema, value);
-      const next = JSON.parse(JSON.stringify(this._data || {}));
-      if (coerced !== undefined) this._setNestedValue(next, name, coerced);
-      this._data = next;
-
-    }
-
-    _attachControlListeners(rootEl) {
-      const inputs = rootEl.querySelectorAll('input,select,textarea');
-      inputs.forEach((el) => {
-
-        el.addEventListener('blur', this._onInputValidate);
-        el.addEventListener('input', () => {
-          this._updateStateFromElement(el);
-          this._applyUiRules();
-          this._emit('form:change', { data: this.getData() });
-        });
-        el.addEventListener('change', () => {
-          this._updateStateFromElement(el);
-          this._emit('field:change', { path: el.name, value: el.value });
-          this._emit('form:change', { data: this.getData() });
-        });
-      });
-    }
+    _attachControlListeners(rootEl) { const inputs = rootEl.querySelectorAll('input,select,textarea'); inputs.forEach((el) => { el.addEventListener('blur', this._onInputValidate); el.addEventListener('input', () => { this._updateStateFromElement(el); this._applyUiRules(); this._emit('form:change', { data: this.getData() }); }); el.addEventListener('change', () => { this._updateStateFromElement(el); this._emit('field:change', { path: el.name, value: el.value }); this._emit('form:change', { data: this.getData() }); }); }); }
 
     _computeDefaults(schema) {
-      if (!schema || typeof schema !== 'object') return undefined;
-      if (schema.default !== undefined) return JSON.parse(JSON.stringify(schema.default));
-      const type = schema.type;
-      if (type === 'object' || (schema.properties && !type)) {
-        const result = {};
-        const props = schema.properties || {};
-        Object.keys(props).forEach((key) => {
-          const d = this._computeDefaults(props[key]);
-          if (d !== undefined) result[key] = d;
-        });
-        return Object.keys(result).length > 0 ? result : {};
-      }
-      if (type === 'array') {
-        if (Array.isArray(schema.default)) return JSON.parse(JSON.stringify(schema.default));
-        return [];
-      }
-      // primitives without default -> undefined to avoid forcing values
-      return undefined;
+      const compute = (s) => {
+        if (!s || typeof s !== 'object') return undefined;
+        if ('$ref' in s && typeof s.$ref === 'string') return undefined; // refs resolved in _dereferenceSchema
+        if (s.default !== undefined) return s.default;
+        if (s.type === 'object' || (s.properties && !s.type)) {
+          const result = {}; const props = s.properties || {}; let hasAny = false;
+          Object.keys(props).forEach((k) => { const def = compute(props[k]); if (def !== undefined) { result[k] = def; hasAny = true; } });
+          return hasAny ? result : undefined;
+        }
+        if (s.type === 'array') {
+          const min = typeof s.minItems === 'number' ? s.minItems : 0; const arr = []; for (let i = 0; i < min; i++) { const d = compute(s.items || {}); arr.push(d); } return arr.length ? arr : (Array.isArray(s.default) ? s.default : undefined);
+        }
+        return undefined;
+      };
+      return compute(schema) || {};
     }
 
-
+    // $ref dereferencing for local definitions ($defs/definitions)
+    _dereferenceSchema(schema) {
+      if (!schema || typeof schema !== 'object') return schema;
+      const root = schema;
+      const unescape = (s) => s.replace(/~1/g, '/').replace(/~0/g, '~');
+      const resolvePointer = (ref) => {
+        if (typeof ref !== 'string' || !ref.startsWith('#/')) return null;
+        const parts = ref.slice(2).split('/').map(unescape);
+        let node = root;
+        for (const p of parts) {
+          if (!node) return null;
+          node = node[p];
+        }
+        return node || null;
+      };
+      const cloneAndResolve = (node) => {
+        if (Array.isArray(node)) return node.map((n) => cloneAndResolve(n));
+        if (node && typeof node === 'object') {
+          if ('$ref' in node) {
+            const target = resolvePointer(node.$ref);
+            const resolved = cloneAndResolve(target || {});
+            const siblings = { ...node }; delete siblings.$ref;
+            // Merge siblings over resolved
+            return { ...resolved, ...cloneAndResolve(siblings) };
+          }
+          const out = {};
+          Object.keys(node).forEach((k) => { out[k] = cloneAndResolve(node[k]); });
+          return out;
+        }
+        return node;
+      };
+      return cloneAndResolve(root);
+    }
   }
 
   function create(rootEl, options) { return new SchemaForm(rootEl, options); }
-
   function registerRenderer(def) { if (def && typeof def.render === 'function') globalRenderers.push(def); }
   function clearRenderers() { globalRenderers.length = 0; }
 
-  global.SchemaFormLib = { SchemaForm, create, registerRenderer, clearRenderers };
+  const api = { SchemaForm, create, registerRenderer, clearRenderers };
+  global.SchemaFormLib = api;
 })(typeof window !== 'undefined' ? window : globalThis);

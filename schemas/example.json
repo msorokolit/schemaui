@@ -4,11 +4,29 @@
   "title": "User Profile",
   "description": "A simple user profile with address, preferences and tags.",
   "type": "object",
+  "$defs": {
+    "duration": { "type": "number", "minimum": 0, "title": "Duration (months)" },
+    "period": {
+      "type": "object",
+      "title": "Period",
+      "properties": {
+        "from": { "type": "string", "format": "date", "title": "From" },
+        "to": { "type": "string", "format": "date", "title": "To" }
+      }
+    }
+  },
   "required": ["name", "age", "email"],
   "properties": {
     "name": { "type": "string", "title": "Full Name", "minLength": 2, "description": "Your full legal name" },
     "email": { "type": "string", "format": "email", "title": "Email Address" },
-    "age": { "type": "integer", "minimum": 0, "maximum": 130, "title": "Age" },
+    "age": {
+      "type": "integer",
+      "title": "Age",
+      "oneOf": [
+        { "minimum": 0, "maximum": 17, "title": "Minor" },
+        { "minimum": 18, "title": "Adult" }
+      ]
+    },
     "website": { "type": "string", "format": "url", "title": "Personal Website", "description": "Optional" },
     "newsletter": { "type": "boolean", "title": "Subscribe to newsletter", "default": true },
     "favoriteColor": { "type": "string", "title": "Favorite Color", "enum": ["red", "green", "blue", "yellow", "purple"] },
@@ -16,7 +34,11 @@
     "tags": { "type": "array", "title": "Tags", "items": { "type": "string" }, "default": ["engineer", "gamer"] },
     "address": {
       "type": "object", "title": "Address", "required": ["street", "city"],
-      "properties": { "street": { "type": "string", "title": "Street" }, "city": { "type": "string", "title": "City" }, "zip": { "type": "string", "title": "ZIP", "pattern": "^[0-9]{5}$" } }
+      "allOf": [
+        { "properties": { "street": { "type": "string", "title": "Street" } } },
+        { "properties": { "city": { "type": "string", "title": "City" } } },
+        { "properties": { "zip": { "type": "string", "title": "ZIP", "pattern": "^[0-9]{5}$" } } }
+      ]
     },
     "contact": {
       "type": "object", "title": "Contact",
@@ -35,17 +57,16 @@
       "type": "array", "title": "Work History",
       "items": {
         "type": "object",
-        "required": ["company", "years"],
+        "required": ["company"],
         "properties": {
           "company": { "type": "string", "title": "Company" },
           "role": { "type": "string", "title": "Role" },
-          "years": { "type": "number", "title": "Years", "minimum": 0 },
-          "period": {
-            "type": "object", "title": "Period",
-            "properties": {
-              "from": { "type": "string", "format": "date", "title": "From" },
-              "to": { "type": "string", "format": "date", "title": "To" }
-            }
+          "period": { "$ref": "#/$defs/period" },
+          "tenure": {
+            "anyOf": [
+              { "$ref": "#/$defs/duration" },
+              { "type": "string", "title": "Tenure (text)" }
+            ]
           }
         }
       },
@@ -60,7 +81,7 @@
         "properties": {
           "name": { "type": "string", "title": "Name" },
           "description": { "type": "string", "title": "Description" },
-          "duration": { "type": "number", "title": "Duration (months)", "minimum": 0 },
+          "duration": { "$ref": "#/$defs/duration" },
           "links": {
             "type": "object", "title": "Links",
             "properties": {
@@ -73,9 +94,5 @@
       "minItems": 0,
       "default": []
     }
-  },
-  "oneOf": [
-    { "properties": { "age": { "minimum": 0, "maximum": 17 } }, "title": "Minor" },
-    { "properties": { "age": { "minimum": 18 } }, "title": "Adult" }
-  ]
+  }
 }
