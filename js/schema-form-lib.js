@@ -846,14 +846,21 @@
 
       const renderDetail = () => {
         detailCol.innerHTML = '';
+        const arr = this.getValue(arrayPath) || [];
+        if (arr.length === 0) return;
         const itemPath = `${arrayPath}[${selectedIndex}]`;
+        const itemSchema = arraySchema.items || {};
         if (element.detail) {
           const adapted = this._renderUiElementWithBase(element.detail, schema, itemPath);
           detailCol.appendChild(adapted);
         } else {
-          const child = this._createControlBySchema('', arraySchema.items || {}, itemPath, false);
+          const child = this._createControlBySchema('', itemSchema, itemPath, false);
           detailCol.appendChild(child);
         }
+        // Hydrate detail from state so previously typed values persist
+        this._setValuesByPath(detailCol, itemSchema, itemPath, arr[selectedIndex]);
+        // Ensure inputs in detail update state
+        this._attachControlListeners(detailCol);
       };
 
       addBtn.addEventListener('click', () => {
@@ -1044,7 +1051,9 @@
         const list = rootElement.querySelector(`.array-items[data-path="${CSS.escape(basePath)}"]`); if (!list) return; list.innerHTML = '';
         const arr = Array.isArray(value) ? value : [];
         arr.forEach((itemVal, idx) => {
-          this._buildArrayItem(list, schema, basePath, idx, itemVal);
+          const itemEl = this._buildArrayItem(list, schema, basePath, idx, itemVal);
+          // Hydrate newly created item inputs from state
+          this._setValuesByPath(itemEl, schema.items || {}, `${basePath}[${idx}]`, itemVal);
         });
         const container = list.parentElement;
         this._updateArrayControlsState(container, schema, basePath, arr.length);
