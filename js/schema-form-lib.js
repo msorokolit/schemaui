@@ -562,7 +562,7 @@
           this._buildArrayItem(list, schema, path, i, (schema.items && schema.items.type === 'object') ? {} : undefined);
         }
       }
-      updateAddState();
+      this._updateArrayControlsState(container, schema, path, list.children.length);
 
       return container;
     }
@@ -972,10 +972,8 @@
         arr.forEach((itemVal, idx) => {
           this._buildArrayItem(list, schema, basePath, idx, itemVal);
         });
-        // reflect maxItems on Add button state
         const container = list.parentElement;
-        const addBtn = container && container.querySelector('.btn-outline-primary');
-        if (addBtn) addBtn.disabled = arr.length >= (schema.maxItems || Infinity);
+        this._updateArrayControlsState(container, schema, basePath, arr.length);
       } else {
         const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return;
         if (input.type === 'checkbox') input.checked = Boolean(value); else input.value = value == null ? '' : String(value);
@@ -1088,6 +1086,15 @@
       if (!input) return null;
       el = input.closest('[data-path]') || input.closest('.mb-3') || input.closest('fieldset');
       return el;
+    }
+
+    _updateArrayControlsState(container, schema, basePath, length) {
+      const addBtn = container.querySelector('.btn-outline-primary');
+      if (addBtn) addBtn.disabled = length >= (schema.maxItems || Infinity);
+      const removeBtns = container.querySelectorAll('.btn-remove');
+      removeBtns.forEach((btn) => {
+        btn.disabled = length <= (schema.minItems || 0);
+      });
     }
   }
 
