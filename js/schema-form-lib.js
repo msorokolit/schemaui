@@ -43,7 +43,8 @@
       this.uiSchema = uiSchema || null;
       this._render();
       await this._initAjv(this.schema);
-      this.validate();
+      // Do not validate immediately to avoid showing errors on first render
+      this._clearAllFieldErrors();
       this._emit('form:change', { data: this.getData() });
     }
 
@@ -642,9 +643,9 @@
 
       removeBtn.addEventListener('click', () => {
         const current = this.getValue(basePath) || [];
-        if (current.length <= (arraySchema.minItems || 0)) return;
-        const next = current.slice();
-        next.splice(index, 1);
+        const min = arraySchema.minItems || 0;
+        if (current.length <= min) return;
+        const next = current.filter((_, i) => i !== index);
         this.setValue(basePath, next);
         const newLen = next.length;
         if (newLen > 0) this._focusFirstInputInItem(basePath, Math.min(index, newLen - 1));
