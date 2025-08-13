@@ -30,6 +30,7 @@
       // Internal controlled state
       this._data = {};
       this._initialData = {};
+      this._editableBindings = new Set();
 
       // Event bus per instance
       this._bus = new Map();
@@ -224,6 +225,8 @@
 
     _render() {
       this.formEl.innerHTML = '';
+      // Reset editable bindings registry on full render
+      this._editableBindings = new Set();
       const element = this.uiSchema ? this._renderUiElement(this.uiSchema, this.schema) : this._createControlBySchema('', this.schema, '', false);
       this.formEl.appendChild(element);
       // Hydrate values from current state if present
@@ -372,11 +375,25 @@
 
       let control;
 
+      const markPassiveIfDuplicate = (el) => {
+        if (!path) return;
+        if (this._editableBindings.has(path)) {
+          // Already has an editable control elsewhere; make this passive
+          el.dataset.passive = 'true';
+          if (el.tagName === 'SELECT') el.disabled = true;
+          else if (el.type === 'checkbox') el.disabled = true;
+          else el.readOnly = true;
+        } else {
+          this._editableBindings.add(path);
+        }
+      };
+
       if (schema.enum) {
         control = document.createElement('select');
         control.className = 'form-select';
         control.id = id;
         control.name = path;
+        markPassiveIfDuplicate(control);
         const hasEmpty = !isRequired && schema.default == null;
         if (hasEmpty) {
           const opt = document.createElement('option');
@@ -397,12 +414,14 @@
         input.className = 'form-control';
         input.id = id;
         input.name = path;
+        markPassiveIfDuplicate(input);
         const widget = schema['x-ui-widget'];
         if (widget === 'textarea' || schema.format === 'textarea') {
           const ta = document.createElement('textarea');
           ta.className = 'form-control';
           ta.id = id;
           ta.name = path;
+          markPassiveIfDuplicate(ta);
           this._setConstraints(ta, schema);
           this._applyDefault(ta, schema);
           if (isRequired) ta.required = true;
@@ -413,7 +432,10 @@
           return wrapper;
         }
         if (widget === 'file' || schema.contentEncoding === 'base64' || schema.contentMediaType) {
-          return this._createFileControl(name, schema, path, isRequired);
+          const fileWrapper = this._createFileControl(name, schema, path, isRequired);
+          const fileInput = fileWrapper.querySelector('input[type="file"]');
+          markPassiveIfDuplicate(fileInput);
+          return fileWrapper;
         }
         input.type = widget === 'password' || schema.format === 'password' ? 'password' : (schema.format ? this._formatToInputType(schema.format) : 'text');
         this._setConstraints(input, schema);
@@ -424,6 +446,7 @@
         input.className = 'form-control';
         input.id = id;
         input.name = path;
+        markPassiveIfDuplicate(input);
         const widget = schema['x-ui-widget'];
         input.type = widget === 'range' ? 'range' : 'number';
         if (schema.type === 'integer' && !schema.multipleOf) input.step = '1';
@@ -438,6 +461,7 @@
         input.type = 'checkbox';
         input.id = id;
         input.name = path;
+        markPassiveIfDuplicate(input);
         this._applyDefault(input, schema);
         const checkLabel = document.createElement('label');
         checkLabel.className = 'form-check-label';
@@ -453,6 +477,7 @@
         input.className = 'form-control';
         input.id = id;
         input.name = path;
+        markPassiveIfDuplicate(input);
         input.type = 'text';
         control = input;
       }
@@ -1253,6 +1278,7 @@
     _attachControlListeners(rootEl) {
       const inputs = rootEl.querySelectorAll('input,select,textarea');
       inputs.forEach((el) => {
+        if (el.dataset && el.dataset.passive === 'true') return;
         el.addEventListener('blur', this._onInputValidate);
         el.addEventListener('input', () => {
           this._updateStateFromElement(el);
