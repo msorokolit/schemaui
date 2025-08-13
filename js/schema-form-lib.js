@@ -31,7 +31,7 @@
       this._data = {};
       this._initialData = {};
       this._editableBindings = new Set();
-      this._arrayBindingPreference = options.arrayBindings || {}; // e.g., { 'workHistory': 'table' | 'list' }
+
 
       // Event bus per instance
       this._bus = new Map();
@@ -1333,19 +1333,13 @@
     }
 
     _isArrayPathEditable(arrayPath, role) {
-      // role: 'table' | 'list'
-      const pref = this._arrayBindingPreference[arrayPath];
-      if (pref) return pref === role;
-      // Default: prefer 'table' editable if both appear; first claim sets pref
-      if (role === 'table') {
-        this._arrayBindingPreference[arrayPath] = 'table';
+      // Systematic rule: the first renderer that claims a path becomes the editor; others become passive previews.
+      if (!this._editableArrayPaths) this._editableArrayPaths = new Map();
+      if (!this._editableArrayPaths.has(arrayPath)) {
+        this._editableArrayPaths.set(arrayPath, role);
         return true;
       }
-      // If list arrives first and table not present, allow list
-      if (!this._arrayBindingPreference[arrayPath]) {
-        this._arrayBindingPreference[arrayPath] = 'list';
-      }
-      return this._arrayBindingPreference[arrayPath] === role;
+      return this._editableArrayPaths.get(arrayPath) === role;
     }
   }
 
