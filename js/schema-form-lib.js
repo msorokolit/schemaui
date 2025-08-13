@@ -145,6 +145,8 @@
       this._data = next;
       // Reflect state to DOM subtree
       this._setValuesByPath(this.formEl, subSchema, path, value);
+      // Sync all controls bound to the same path across the form
+      this._syncBoundControls(path, this._getValueByPath(path));
       if (activeName) {
         const refocus = this.formEl.querySelector(`[name="${CSS.escape(activeName)}"]`);
         if (refocus) refocus.focus();
