@@ -534,6 +534,7 @@
         const next = current.slice();
         next.push(initialData !== undefined ? initialData : (schema.items && schema.items.type === 'object' ? {} : undefined));
         this.setValue(path, next);
+        this._focusFirstInputInItem(path, next.length - 1);
       };
 
       addBtn.addEventListener('click', () => { addItem(); });
@@ -592,9 +593,16 @@
       return container;
     }
 
+    _focusFirstInputInItem(basePath, index) {
+      const prefix = `${basePath}[${index}]`;
+      const target = this.formEl.querySelector(`[name^="${CSS.escape(prefix)}"]`);
+      if (target) target.focus();
+    }
+
     _buildArrayItem(list, arraySchema, basePath, index, initialData) {
       const itemWrapper = document.createElement('div');
       itemWrapper.className = 'border rounded p-3 position-relative';
+      itemWrapper.dataset.path = `${basePath}[${index}]`;
 
       const btnGroup = document.createElement('div');
       btnGroup.className = 'position-absolute d-flex gap-2';
@@ -616,13 +624,15 @@
 
       if (initialData !== undefined) this._setValuesByPath(itemWrapper, arraySchema.items || {}, itemPath, initialData);
 
-              removeBtn.addEventListener('click', () => {
-          const current = this.getValue(basePath) || [];
-          if (current.length <= (arraySchema.minItems || 0)) return;
-          const next = current.slice();
-          next.splice(index, 1);
-          this.setValue(basePath, next);
-        });
+      removeBtn.addEventListener('click', () => {
+        const current = this.getValue(basePath) || [];
+        if (current.length <= (arraySchema.minItems || 0)) return;
+        const next = current.slice();
+        next.splice(index, 1);
+        this.setValue(basePath, next);
+        const newLen = next.length;
+        if (newLen > 0) this._focusFirstInputInItem(basePath, Math.min(index, newLen - 1));
+      });
 
       upBtn.addEventListener('click', () => {
         const current = this.getValue(basePath) || [];
@@ -630,6 +640,7 @@
           const next = current.slice();
           const tmp = next[index - 1]; next[index - 1] = next[index]; next[index] = tmp;
           this.setValue(basePath, next);
+          this._focusFirstInputInItem(basePath, index - 1);
         }
       });
 
@@ -639,6 +650,7 @@
           const next = current.slice();
           const tmp = next[index + 1]; next[index + 1] = next[index]; next[index] = tmp;
           this.setValue(basePath, next);
+          this._focusFirstInputInItem(basePath, index + 1);
         }
       });
 
