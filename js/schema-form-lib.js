@@ -103,7 +103,12 @@
 
     setValue(path, value) {
       const subSchema = this._findSchemaForPath(this.schema, path);
+      const activeName = (this.formEl.contains(document.activeElement) && document.activeElement.name) ? document.activeElement.name : null;
       this._setValuesByPath(this.formEl, subSchema, path, value);
+      if (activeName) {
+        const refocus = this.formEl.querySelector(`[name="${CSS.escape(activeName)}"]`);
+        if (refocus) refocus.focus();
+      }
       this._emit('field:change', { path, value });
       this._emit('form:change', { data: this.getData() });
       this.validate();
@@ -510,8 +515,8 @@
       const minItems = typeof schema.minItems === 'number' ? schema.minItems : 0;
       const maxItems = typeof schema.maxItems === 'number' ? schema.maxItems : Infinity;
 
-      const updateAddState = () => { addBtn.disabled = list.children.length >= maxItems; };
-      const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = list.children.length <= minItems; };
+      const updateAddState = () => { addBtn.disabled = (this.getValue(path)?.length || 0) >= maxItems; };
+      const updateRemoveState = (itemWrapper) => { const removeBtn = itemWrapper.querySelector('.btn-remove'); if (removeBtn) removeBtn.disabled = (this.getValue(path)?.length || 0) <= minItems; };
 
       const addItem = (initialData) => {
         const index = list.children.length;
@@ -571,7 +576,7 @@
         updateRemoveState(itemWrapper); updateAddState(); this._emit('form:change', { data: this.getData() });
       };
 
-      addBtn.addEventListener('click', () => { addItem(); if (this.liveValidate) this.validate(); this._emit('form:change', { data: this.getData() }); });
+      addBtn.addEventListener('click', () => { addItem(); });
 
       if (Array.isArray(schema.default)) schema.default.forEach((val) => addItem(val));
       else if (minItems > 0) for (let i = 0; i < minItems; i++) addItem();
@@ -619,6 +624,58 @@
 
       container.appendChild(table); table.appendChild(thead); table.appendChild(tbody); container.appendChild(addBtn);
       return container;
+    }
+
+    _buildArrayItem(list, arraySchema, basePath, index, initialData) {
+      const itemWrapper = document.createElement('div');
+      itemWrapper.className = 'border rounded p-3 position-relative';
+
+      const btnGroup = document.createElement('div');
+      btnGroup.className = 'position-absolute d-flex gap-2';
+      btnGroup.style.top = '8px';
+      btnGroup.style.right = '8px';
+
+      const upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.className = 'btn btn-sm btn-outline-secondary'; upBtn.textContent = '↑';
+      const downBtn = document.createElement('button'); downBtn.type = 'button'; downBtn.className = 'btn btn-sm btn-outline-secondary'; downBtn.textContent = '↓';
+      const removeBtn = document.createElement('button'); removeBtn.type = 'button'; removeBtn.className = 'btn btn-sm btn-outline-danger btn-remove'; removeBtn.textContent = 'Remove';
+
+      btnGroup.appendChild(upBtn); btnGroup.appendChild(downBtn); btnGroup.appendChild(removeBtn);
+
+      const itemPath = `${basePath}[${index}]`;
+      const itemContent = this._createControlBySchema('', arraySchema.items || {}, itemPath, false);
+
+      itemWrapper.appendChild(btnGroup);
+      itemWrapper.appendChild(itemContent);
+      list.appendChild(itemWrapper);
+
+      if (initialData !== undefined) this._setValuesByPath(itemWrapper, arraySchema.items || {}, itemPath, initialData);
+
+      removeBtn.addEventListener('click', () => {
+        const current = this.getValue(basePath) || [];
+        const next = current.slice();
+        next.splice(index, 1);
+        this.setValue(basePath, next);
+      });
+
+      upBtn.addEventListener('click', () => {
+        const current = this.getValue(basePath) || [];
+        if (index > 0) {
+          const next = current.slice();
+          const tmp = next[index - 1]; next[index - 1] = next[index]; next[index] = tmp;
+          this.setValue(basePath, next);
+        }
+      });
+
+      downBtn.addEventListener('click', () => {
+        const current = this.getValue(basePath) || [];
+        if (index < (list.children.length - 1)) {
+          const next = current.slice();
+          const tmp = next[index + 1]; next[index + 1] = next[index]; next[index] = tmp;
+          this.setValue(basePath, next);
+        }
+      });
+
+      return itemWrapper;
     }
 
     _renumberArrayItemNames(listElement, basePath) {
@@ -918,13 +975,7 @@
         const list = rootElement.querySelector(`.array-items[data-path="${CSS.escape(basePath)}"]`); if (!list) return; list.innerHTML = '';
         const arr = Array.isArray(value) ? value : [];
         arr.forEach((itemVal, idx) => {
-          const itemPath = `${basePath}[${idx}]`;
-          const itemWrapper = document.createElement('div'); itemWrapper.className = 'border rounded p-3 position-relative';
-          const removeBtn = document.createElement('button'); removeBtn.type = 'button'; removeBtn.className = 'btn btn-sm btn-outline-danger position-absolute'; removeBtn.style.top = '8px'; removeBtn.style.right = '8px'; removeBtn.textContent = 'Remove';
-          const itemContent = this._createControlBySchema('', schema.items || {}, itemPath, false);
-          itemWrapper.appendChild(removeBtn); itemWrapper.appendChild(itemContent); list.appendChild(itemWrapper);
-          this._setValuesByPath(itemWrapper, schema.items || {}, itemPath, itemVal);
-          removeBtn.addEventListener('click', () => { itemWrapper.remove(); this._renumberArrayItemNames(list, basePath); });
+          this._buildArrayItem(list, schema, basePath, idx, itemVal);
         });
       } else {
         const input = rootElement.querySelector(`[name="${CSS.escape(basePath)}"]`); if (!input) return;
