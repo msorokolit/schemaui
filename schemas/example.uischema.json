@@ -15,8 +15,11 @@
         ]},
         { "type": "Group", "label": "Preferences", "elements": [
           { "type": "Control", "label": "Subscribe", "scope": "#/properties/newsletter" },
-          { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
-          { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
+          { "type": "Group", "label": "Preference Details", "rule": { "effect": "HIDE", "condition": { "scope": "#/properties/newsletter", "equals": false } }, "elements": [
+            { "type": "Control", "label": "Favorite Color", "scope": "#/properties/favoriteColor" },
+            { "type": "Control", "label": "Accent Color", "scope": "#/properties/accentColor" },
+            { "type": "Control", "label": "Tags", "scope": "#/properties/tags" }
+          ]}
         ]}
       ]
     },
@@ -47,12 +50,5 @@
         { "type": "Control", "label": "Work History (Table)", "scope": "#/properties/workHistory", "renderer": "Table" }
       ]
     }
-  ],
-  "rule": {
-    "effect": "HIDE",
-    "condition": {
-      "scope": "#/properties/newsletter",
-      "equals": false
-    }
-  }
+  ]
 }
