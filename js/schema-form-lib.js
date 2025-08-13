@@ -808,11 +808,8 @@
 
       const renderList = () => {
         listGroup.innerHTML = '';
-        const regex = new RegExp(`^${this._escapeRegExp(arrayPath)}\\\[(\\d+)\\]`);
-        const names = new Set();
-        this.formEl.querySelectorAll('[name]').forEach((el) => { const m = el.name.match(regex); if (m) names.add(Number(m[1])); });
-        const length = names.size || 0;
-        for (let i = 0; i < length; i++) {
+        const arr = this.getValue(arrayPath) || [];
+        for (let i = 0; i < arr.length; i++) {
           const a = document.createElement('button'); a.type = 'button'; a.className = `list-group-item list-group-item-action${i === selectedIndex ? ' active' : ''}`; a.textContent = `Item ${i + 1}`;
           a.addEventListener('click', () => { selectedIndex = i; renderList(); renderDetail(); });
           listGroup.appendChild(a);
@@ -834,8 +831,9 @@
       addBtn.addEventListener('click', () => {
         const current = this.getValue(arrayPath) || [];
         const next = current.slice();
-        next.push({});
+        next.push((arraySchema.items && arraySchema.items.type === 'object') ? {} : undefined);
         this.setValue(arrayPath, next);
+        selectedIndex = next.length - 1;
         renderList(); renderDetail();
       });
 
